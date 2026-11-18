@@ -95,6 +95,23 @@ fn normalize_stored(mut stored: StoredWorkspace) -> StoredWorkspace {
     if !valid {
         stored.active_project_id = stored.projects.first().map(|p| p.id.clone());
     }
+    // 旧数据迁移：环境里的 baseUrl 变量升级为「统一 URL 前缀」
+    for project in stored.projects.iter_mut() {
+        for env in project.environments.iter_mut() {
+            if env.base_url.trim().is_empty() {
+                if let Some(found) = env.variables.iter().find(|variable| {
+                    variable.enabled
+                        && !variable.value.trim().is_empty()
+                        && matches!(
+                            variable.key.to_lowercase().as_str(),
+                            "baseurl" | "base_url" | "url" | "host"
+                        )
+                }) {
+                    env.base_url = found.value.clone();
+                }
+            }
+        }
+    }
     stored.version = 2;
     stored
 }
@@ -357,21 +374,24 @@ pub fn rename_folder(
     }
     mutate(|project| match project.collections.iter_mut().find(|c| c.id == collection_id) {
         Some(col) => {
+            let child_prefix = format!("{old_name}/");
             for folder in col.folders.iter_mut() {
                 if folder == old_name {
                     *folder = new_name.clone();
-                }
-            }
-            for config in col.folder_vars.iter_mut() {
-                if config.name == old_name {
-                    config.name = new_name.clone();
+                } else if let Some(rest) = folder.strip_prefix(&child_prefix) {
+                    *folder = format!("{new_name}/{rest}");
                 }
             }
             col.updated_at = now_ms();
             let folders = col.folders.clone();
             for request in project.requests.iter_mut() {
-                if request.collection_id == collection_id && request.folder == old_name {
+                if request.collection_id != collection_id {
+                    continue;
+                }
+                if request.folder == old_name {
                     request.folder = new_name.clone();
+                } else if let Some(rest) = request.folder.strip_prefix(&child_prefix) {
+                    request.folder = format!("{new_name}/{rest}");
                 }
             }
             Ok(folders)
@@ -383,12 +403,16 @@ pub fn rename_folder(
 pub fn delete_folder(collection_id: &str, name: &str) -> Result<Vec<String>, String> {
     mutate(|project| match project.collections.iter_mut().find(|c| c.id == collection_id) {
         Some(col) => {
-            col.folders.retain(|folder| folder != name);
-            col.folder_vars.retain(|config| config.name != name);
+            // 支持多级目录：同时删除其子目录
+            let prefix = format!("{name}/");
+            col.folders
+                .retain(|folder| folder != name && !folder.starts_with(&prefix));
             col.updated_at = now_ms();
             let folders = col.folders.clone();
             for request in project.requests.iter_mut() {
-                if request.collection_id == collection_id && request.folder == name {
+                if request.collection_id == collection_id
+                    && (request.folder == name || request.folder.starts_with(&prefix))
+                {
                     request.folder.clear();
                 }
             }
@@ -398,47 +422,7 @@ pub fn delete_folder(collection_id: &str, name: &str) -> Result<Vec<String>, Str
     })?
 }
 
-/// 保存目录级变量 / 公共请求头
-pub fn set_folder_config(
-    collection_id: &str,
-    name: &str,
-    variables: Vec<KeyValue>,
-    headers: Vec<KeyValue>,
-) -> Result<FolderVars, String> {
-    let name = name.trim().to_string();
-    if name.is_empty() {
-        return Err("目录不存在".to_string());
-    }
-    mutate(|project| match project.collections.iter_mut().find(|c| c.id == collection_id) {
-        Some(col) => {
-            if !col.folders.contains(&name) {
-                col.folders.push(name.clone());
-            }
-            let config = FolderVars {
-                name: name.clone(),
-                variables,
-                headers,
-            };
-            if let Some(existing) = col.folder_vars.iter_mut().find(|c| c.name == name) {
-                *existing = config.clone();
-            } else {
-                col.folder_vars.push(config.clone());
-            }
-            col.updated_at = now_ms();
-            Ok(config)
-        }
-        None => Err("集合不存在".to_string()),
-    })?
-}
 
-pub fn folder_configs(collection_id: &str) -> Vec<FolderVars> {
-    snapshot()
-        .collections
-        .into_iter()
-        .find(|c| c.id == collection_id)
-        .map(|c| c.folder_vars)
-        .unwrap_or_default()
-}
 
 /* --------------------------------- requests -------------------------------- */
 
@@ -594,6 +578,19 @@ pub fn apply_import(
 /* ------------------------------- environments ------------------------------ */
 
 pub fn save_environment(env: Value) -> Result<Environment, String> {
+    let base_url = env
+        .get("baseUrl")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let headers: Vec<KeyValue> = env
+        .get("headers")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default();
+    let variables: Option<Vec<EnvVar>> = env
+        .get("variables")
+        .and_then(|v| serde_json::from_value(v.clone()).ok());
+
     mutate(|project| {
         let id = env.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
         let now = now_ms();
@@ -602,10 +599,10 @@ pub fn save_environment(env: Value) -> Result<Environment, String> {
                 if let Some(name) = env.get("name").and_then(|v| v.as_str()) {
                     existing.name = name.to_string();
                 }
-                if let Some(vars) = env.get("variables") {
-                    if let Ok(parsed) = serde_json::from_value::<Vec<EnvVar>>(vars.clone()) {
-                        existing.variables = parsed;
-                    }
+                existing.base_url = base_url.clone();
+                existing.headers = headers.clone();
+                if let Some(variables) = variables.clone() {
+                    existing.variables = variables;
                 }
                 existing.updated_at = now;
                 return existing.clone();
@@ -618,10 +615,9 @@ pub fn save_environment(env: Value) -> Result<Environment, String> {
                 .and_then(|v| v.as_str())
                 .unwrap_or("新环境")
                 .to_string(),
-            variables: env
-                .get("variables")
-                .and_then(|v| serde_json::from_value::<Vec<EnvVar>>(v.clone()).ok())
-                .unwrap_or_default(),
+            base_url: base_url.clone(),
+            headers: headers.clone(),
+            variables: variables.unwrap_or_default(),
             created_at: now,
             updated_at: now,
         };

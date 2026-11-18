@@ -27,8 +27,7 @@ export function installTauriBridge(): void {
     renameFolder: (collectionId, oldName, newName) =>
       invoke('rename_folder', { collectionId, oldName, newName }),
     deleteFolder: (collectionId, name) => invoke('delete_folder', { collectionId, name }),
-    setFolderConfig: (collectionId, name, variables, headers) =>
-      invoke('set_folder_config', { collectionId, name, variables, headers }),
+
     createProject: (name, description = '') => invoke('create_project', { name, description }),
     renameProject: (id, name, description) => invoke('rename_project', { id, name, description }),
     deleteProject: (id) => invoke('delete_project', { id }),

@@ -79,16 +79,7 @@ fn set_active_project(id: String) -> Result<(), String> {
     store::set_active_project(&id)
 }
 
-#[tauri::command]
-fn set_folder_config(
-    collection_id: String,
-    name: String,
-    variables: Vec<KeyValue>,
-    headers: Vec<KeyValue>,
-) -> Result<Value, String> {
-    let config = store::set_folder_config(&collection_id, &name, variables, headers)?;
-    serde_json::to_value(config).map_err(|e| e.to_string())
-}
+
 
 #[tauri::command]
 fn replace_workspace(workspace: Value) -> Result<Value, String> {
@@ -485,7 +476,6 @@ fn main() {
             rename_project,
             delete_project,
             set_active_project,
-            set_folder_config,
             replace_workspace,
             create_collection,
             update_collection,

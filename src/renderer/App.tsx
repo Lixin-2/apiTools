@@ -18,7 +18,6 @@ import ResponseView from './components/ResponseView';
 import {
   EnvDialog,
   ExportDialog,
-  FolderVarsDialog,
   ImportDialog,
   McpDialog,
   Modal,
@@ -53,9 +52,7 @@ export default function App() {
   const [sending, setSending] = React.useState(false);
   const [dialog, setDialog] = React.useState<DialogKey>(null);
   const [exportTarget, setExportTarget] = React.useState<Collection | null>(null);
-  const [folderSettings, setFolderSettings] = React.useState<{ collection: Collection; folder: string } | null>(
-    null,
-  );
+
   const [toast, setToast] = React.useState('');
   const [promptState, setPromptState] = React.useState<{
     title: string;
@@ -160,20 +157,15 @@ export default function App() {
   }, [savedSnapshot]);
 
   const activeEnv = workspace?.environments.find((e) => e.id === workspace.activeEnvironmentId);
-  const currentCollection = workspace?.collections.find((c) => c.id === draft?.collectionId);
-  const currentFolderConfig = currentCollection?.folderVars?.find((f) => f.name === draft?.folder);
-
-  // 变量优先级：目录变量 > 环境变量
-  const variables = React.useMemo(() => {
-    const map = new Map<string, KeyValue>();
-    for (const variable of activeEnv?.variables ?? []) {
-      if (variable.key) map.set(variable.key, variable);
-    }
-    for (const variable of currentFolderConfig?.variables ?? []) {
-      if (variable.key) map.set(variable.key, { ...variable, id: `folder_${variable.id}` });
-    }
-    return [...map.values()];
-  }, [activeEnv, currentFolderConfig]);
+  const envBaseUrl = (activeEnv?.baseUrl ?? '').trim();
+  const variables: KeyValue[] = [];
+  const previewUrl = React.useMemo(() => {
+    const url = (draft?.url ?? '').trim();
+    if (!url) return '';
+    if (/^https?:\/\//i.test(url)) return url;
+    if (!envBaseUrl) return url;
+    return `${envBaseUrl.replace(/\/+$/, '')}/${url.replace(/^\/+/, '')}`;
+  }, [draft?.url, envBaseUrl]);
 
   const dirty = draft ? JSON.stringify(draft) !== savedSnapshot : false;
 
@@ -211,17 +203,18 @@ export default function App() {
     openRequest(created);
   };
 
-  const createFolderIn = (collection: Collection) =>
+  const createFolderIn = (collection: Collection, parentPath?: string) =>
     prompt(
-      '新建目录',
+      parentPath ? `在「${parentPath}」下新建子目录` : '新建目录',
       '',
       async (value) => {
         const name = value.trim();
         if (!name) return;
+        const path = parentPath ? `${parentPath}/${name}` : name;
         try {
-          await window.api.createFolder(collection.id, name);
+          await window.api.createFolder(collection.id, path);
           await reload();
-          showToast(`目录「${name}」已创建`);
+          showToast(`目录「${path}」已创建`);
         } catch (error: any) {
           showToast(error?.message ?? String(error));
         }
@@ -229,18 +222,29 @@ export default function App() {
       '目录名称，例如「用户中心」',
     );
 
-  const renameFolderIn = (collection: Collection, folder: string) =>
+  const renameFolderIn = (collection: Collection, folder: string) => {
+    const segments = folder.split('/');
+    const current = segments[segments.length - 1];
     prompt(
       '重命名目录',
-      folder,
+      current,
       async (value) => {
         const name = value.trim();
-        if (!name || name === folder) return;
+        if (!name || name === current) return;
+        const parent = segments.slice(0, -1).join('/');
+        const nextPath = parent ? `${parent}/${name}` : name;
         try {
-          await window.api.renameFolder(collection.id, folder, name);
+          await window.api.renameFolder(collection.id, folder, nextPath);
           await reload();
-          if (draft?.collectionId === collection.id && draft.folder === folder) {
-            setDraft({ ...draft, folder: name });
+          if (draft?.collectionId === collection.id) {
+            if (draft.folder === folder) {
+              setDraft({ ...draft, folder: nextPath });
+            } else if (draft.folder.startsWith(`${folder}/`)) {
+              setDraft({
+                ...draft,
+                folder: `${nextPath}/${draft.folder.slice(folder.length + 1)}`,
+              });
+            }
           }
           showToast('目录已重命名');
         } catch (error: any) {
@@ -249,6 +253,7 @@ export default function App() {
       },
       '新的目录名称',
     );
+  };
 
   const switchProject = async (id: string) => {
     if (!id || workspace?.activeProjectId === id) return;
@@ -313,7 +318,7 @@ export default function App() {
   };
 
   const deleteFolderIn = async (collection: Collection, folder: string) => {
-    if (!window.confirm(`删除目录「${folder}」？目录内的接口会移到集合根级，不会被删除。`)) return;
+    if (!window.confirm(`删除目录「${folder}」及其子目录？目录内的接口会移到集合根级，不会被删除。`)) return;
     await window.api.deleteFolder(collection.id, folder);
     await reload();
     if (draft?.collectionId === collection.id && draft.folder === folder) {
@@ -328,10 +333,11 @@ export default function App() {
     setResponse(null);
     try {
       const vars: Record<string, string> = {};
-      for (const variable of variables) {
-        if (variable.enabled && variable.key) vars[variable.key] = variable.value;
+      let url = draft.url.trim();
+      // 环境统一 URL 前缀：接口写相对路径时自动拼接
+      if (!/^https?:\/\//i.test(url) && envBaseUrl) {
+        url = `${envBaseUrl.replace(/\/+$/, '')}/${url.replace(/^\/+/, '')}`;
       }
-      let url = substituteVars(draft.url, vars);
       const params: KeyValue[] = draft.params.map((p) => ({
         ...p,
         key: substituteVars(p.key, vars),
@@ -340,10 +346,10 @@ export default function App() {
       url = applyParams(url, params);
 
       const headers: Record<string, string> = {};
-      // 目录级公共请求头（请求内同名 Header 会覆盖）
-      for (const header of currentFolderConfig?.headers ?? []) {
+      // 环境统一请求头（请求内同名 Header 会覆盖）
+      for (const header of activeEnv?.headers ?? []) {
         if (!header.enabled || !header.key) continue;
-        headers[substituteVars(header.key, vars)] = substituteVars(header.value, vars);
+        headers[header.key] = header.value;
       }
       for (const h of draft.headers) {
         if (!h.enabled || !h.key) continue;
@@ -518,7 +524,6 @@ export default function App() {
           onCreateProject={createProjectPrompt}
           onRenameProject={renameProjectPrompt}
           onDeleteProject={deleteProjectConfirm}
-          onFolderSettings={(collection, folder) => setFolderSettings({ collection, folder })}
           onCreateRequest={createRequestIn}
           onCreateCollection={() =>
             prompt('新建集合', '', async (value) => {
@@ -578,6 +583,8 @@ export default function App() {
                 dirty={dirty}
                 sending={sending}
                 variables={variables}
+                previewUrl={previewUrl}
+                baseUrl={envBaseUrl}
                 folders={
                   workspace?.collections.find((c) => c.id === draft.collectionId)?.folders ?? []
                 }
@@ -675,31 +682,6 @@ export default function App() {
           }
           onSave={async (format) => {
             await handleExport(exportTarget, format, true);
-          }}
-        />
-      )}
-
-      {folderSettings && (
-        <FolderVarsDialog
-          collectionName={folderSettings.collection.name}
-          folder={folderSettings.folder}
-          config={folderSettings.collection.folderVars?.find((f) => f.name === folderSettings.folder)}
-          requestCount={
-            workspace?.requests.filter(
-              (r) => r.collectionId === folderSettings.collection.id && r.folder === folderSettings.folder,
-            ).length ?? 0
-          }
-          onClose={() => setFolderSettings(null)}
-          onSave={async (vars, headers) => {
-            await window.api.setFolderConfig(
-              folderSettings.collection.id,
-              folderSettings.folder,
-              vars,
-              headers,
-            );
-            await reload();
-            setFolderSettings(null);
-            showToast('目录配置已保存');
           }}
         />
       )}

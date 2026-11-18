@@ -649,6 +649,25 @@ body.resizing-row * {
   font-family: -apple-system, 'PingFang SC', sans-serif;
 }
 
+.prefix-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 10.5px;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.prefix-chip.active {
+  color: var(--accent-text);
+  background: var(--accent-soft);
+}
+.prefix-chip.muted {
+  color: var(--text-faint);
+  background: var(--bg-elev-3);
+}
+
 .var-trigger {
   display: inline-flex;
   align-items: center;

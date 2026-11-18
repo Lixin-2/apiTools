@@ -152,27 +152,13 @@ pub struct Collection {
     pub name: String,
     #[serde(default)]
     pub description: String,
-    /// 集合下的目录（可包含空目录）。请求通过 `folder` 字段归属到目录。
+    /// 集合下的目录，支持多级（用 "/" 分隔，如 "用户中心/登录"）
     #[serde(default)]
     pub folders: Vec<String>,
-    /// 目录级变量与公共请求头，目录内的请求会继承
-    #[serde(default)]
-    pub folder_vars: Vec<FolderVars>,
     #[serde(default = "now_ms")]
     pub created_at: u64,
     #[serde(default = "now_ms")]
     pub updated_at: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct FolderVars {
-    #[serde(default)]
-    pub name: String,
-    #[serde(default)]
-    pub variables: Vec<KeyValue>,
-    #[serde(default)]
-    pub headers: Vec<KeyValue>,
 }
 
 pub fn collection_id_default() -> String {
@@ -186,7 +172,6 @@ impl Collection {
             name: name.into(),
             description: description.into(),
             folders: Vec::new(),
-            folder_vars: Vec::new(),
             created_at: now_ms(),
             updated_at: now_ms(),
         }
@@ -213,6 +198,13 @@ pub struct Environment {
     pub id: String,
     #[serde(default)]
     pub name: String,
+    /// 统一 URL 前缀，例如 https://api.example.com/v1
+    #[serde(default)]
+    pub base_url: String,
+    /// 统一请求头，发送时会自动注入（请求内同名 Header 优先）
+    #[serde(default)]
+    pub headers: Vec<KeyValue>,
+    /// 兼容旧数据的变量表，不再在界面中使用
     #[serde(default)]
     pub variables: Vec<EnvVar>,
     #[serde(default = "now_ms")]

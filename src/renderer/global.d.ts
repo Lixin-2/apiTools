@@ -3,7 +3,6 @@ import type {
   Collection,
   Environment,
   ExportFormat,
-  FolderVars,
   ImportFormat,
   KeyValue,
   ProjectSummary,
@@ -41,12 +40,6 @@ export interface ApiToolsApi {
   createFolder(collectionId: string, name: string): Promise<string[]>;
   renameFolder(collectionId: string, oldName: string, newName: string): Promise<string[]>;
   deleteFolder(collectionId: string, name: string): Promise<string[]>;
-  setFolderConfig(
-    collectionId: string,
-    name: string,
-    variables: KeyValue[],
-    headers: KeyValue[],
-  ): Promise<FolderVars>;
   createProject(name: string, description?: string): Promise<ProjectSummary>;
   renameProject(id: string, name: string, description?: string): Promise<void>;
   deleteProject(id: string): Promise<boolean>;

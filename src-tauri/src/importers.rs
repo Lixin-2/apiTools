@@ -347,12 +347,9 @@ pub fn import_openapi(content: &str) -> Result<ImportOutput, String> {
                     }
                 };
 
-                // servers 为绝对地址时直接拼接；否则用 {{baseUrl}} 占位，便于用环境变量切换环境
-                let url = if base_url.starts_with("http://") || base_url.starts_with("https://") {
-                    format!("{}{}", base_url.trim_end_matches('/'), path)
-                } else {
-                    format!("{{{{baseUrl}}}}{}", format!("{}{}", base_url.trim_end_matches('/'), path))
-                };
+                // servers 为绝对地址时拼接完整 URL；为相对路径（如 /api/v3）时保留相对形式，
+                // 交给「环境」里的统一 URL 前缀在发送时补全
+                let url = format!("{}{}", base_url.trim_end_matches('/'), path);
 
                 requests.push(ApiRequest {
                     name,

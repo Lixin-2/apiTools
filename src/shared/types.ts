@@ -56,18 +56,12 @@ export interface ApiRequest {
   updatedAt: number;
 }
 
-export interface FolderVars {
-  name: string;
-  variables: KeyValue[];
-  headers: KeyValue[];
-}
-
 export interface Collection {
   id: string;
   name: string;
   description: string;
+  /** 目录路径，支持多级，例如 "用户中心/登录" */
   folders: string[];
-  folderVars: FolderVars[];
   createdAt: number;
   updatedAt: number;
 }
@@ -92,7 +86,12 @@ export interface EnvVar {
 export interface Environment {
   id: string;
   name: string;
-  variables: EnvVar[];
+  /** 统一 URL 前缀，例如 https://api.example.com/v1 */
+  baseUrl: string;
+  /** 统一请求头，发送时自动注入（请求内同名 Header 优先） */
+  headers: KeyValue[];
+  /** 兼容旧数据的变量表，界面中不再使用 */
+  variables?: EnvVar[];
   createdAt: number;
   updatedAt: number;
 }

@@ -176,7 +176,7 @@ fn tool_defs() -> Value {
         },
         {
             "name": "list_environments",
-            "description": "列出 apiTools 中保存的环境与变量。",
+            "description": "列出 apiTools 中保存的环境（统一 URL 前缀与统一请求头）。",
             "inputSchema": { "type": "object", "properties": {} }
         }
     ])

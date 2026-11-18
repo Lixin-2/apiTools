@@ -16,6 +16,8 @@ interface Props {
   dirty: boolean;
   sending: boolean;
   variables: KeyValue[];
+  previewUrl: string;
+  baseUrl: string;
   folders: string[];
   onChange: (patch: Partial<ApiRequest>) => void;
   onSend: () => void;
@@ -130,33 +132,22 @@ export default function RequestEditor({
   dirty,
   sending,
   variables,
+  previewUrl,
+  baseUrl,
   folders,
   onChange,
   onSend,
   onSave,
 }: Props) {
   const [tab, setTab] = React.useState<TabKey>('params');
-  const [showVars, setShowVars] = React.useState(false);
 
   const activeParams = draft.params.filter((p) => p.enabled && p.key).length;
   const activeHeaders = draft.headers.filter((h) => h.enabled && h.key).length;
   const methodColor = METHOD_COLORS[draft.method] ?? 'var(--text-dim)';
 
-  const varMap = React.useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const variable of variables) {
-      if (variable.enabled && variable.key) map[variable.key] = variable.value;
-    }
-    return map;
-  }, [variables]);
-
-  const usedVars = React.useMemo(() => {
-    const found = [...draft.url.matchAll(/\{\{\s*([\w.-]+)\s*\}\}/g)].map((m) => m[1]);
-    return [...new Set(found)];
-  }, [draft.url]);
-
-  const missingVars = usedVars.filter((name) => !(name in varMap));
-  const resolvedUrl = substituteVars(draft.url, varMap);
+  const hasVars = /\{\{[\w.-]+\}\}/.test(draft.url);
+  const isAbsolute = /^https?:\/\//i.test(draft.url.trim());
+  const willPrefix = !isAbsolute && !!baseUrl && draft.url.trim().length > 0;
 
   const onUrlChange = (value: string) => {
     if (value.includes('?')) {
@@ -191,19 +182,19 @@ export default function RequestEditor({
             value={draft.url}
             onChange={onUrlChange}
             variables={variables}
-            placeholder="https://api.example.com/v1/users 或 {{baseUrl}}/users"
+            placeholder="https://api.example.com/users 或相对路径 /users"
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) onSend();
             }}
           />
-          <button
-            className={`var-trigger ${usedVars.length ? 'has-vars' : ''}`}
-            title="查看环境变量"
-            onClick={() => setShowVars((v) => !v)}
-          >
-            <Icon name="key" size={12} />
-            {usedVars.length > 0 && <span>{usedVars.length}</span>}
-          </button>
+          {baseUrl && (
+            <span
+              className={`prefix-chip ${isAbsolute ? 'muted' : 'active'}`}
+              title={`环境 URL 前缀：${baseUrl}`}
+            >
+              {isAbsolute ? '完整地址' : '前缀已拼接'}
+            </span>
+          )}
         </div>
         <button className="send-btn" onClick={onSend} disabled={sending || !draft.url}>
           {sending ? <span className="spinner" /> : <Icon name="send" size={13} />}
@@ -214,46 +205,21 @@ export default function RequestEditor({
         </button>
       </div>
 
-      {usedVars.length > 0 && (
-        <div className={`url-hint ${missingVars.length ? 'warn' : ''}`}>
-          <Icon name={missingVars.length ? 'info' : 'check'} size={12} />
-          {missingVars.length ? (
-            <span>
-              变量未定义：{missingVars.map((name) => `{{${name}}}`).join('、')} —— 请到右上角「环境」里添加
-            </span>
-          ) : (
-            <span>
-              发送时解析为 <code>{resolvedUrl}</code>
-            </span>
-          )}
+      {hasVars ? (
+        <div className="url-hint warn">
+          <Icon name="info" size={12} />
+          <span>
+            检测到 {'{{变量}}'}：变量已改为「环境」里的 URL 前缀与统一请求头，可直接写相对路径，例如 /users
+          </span>
         </div>
-      )}
-
-      {showVars && (
-        <div className="var-popover">
-          <div className="var-popover-head">
-            <span>环境变量</span>
-            <span className="help">点击复制 {'{{变量}}'}</span>
-          </div>
-          {variables.filter((v) => v.enabled && v.key).length ? (
-            variables
-              .filter((v) => v.enabled && v.key)
-              .map((variable) => (
-                <button
-                  key={variable.id}
-                  className="var-item"
-                  onClick={() => navigator.clipboard.writeText(`{{${variable.key}}}`)}
-                >
-                  <code>{`{{${variable.key}}}`}</code>
-                  <span>{variable.value || '（空）'}</span>
-                  <Icon name="copy" size={11} />
-                </button>
-              ))
-          ) : (
-            <div className="var-empty">尚未配置环境变量，点击右上角「环境」添加</div>
-          )}
+      ) : willPrefix ? (
+        <div className="url-hint">
+          <Icon name="globe" size={12} />
+          <span>
+            发送到 <code>{previewUrl}</code>
+          </span>
         </div>
-      )}
+      ) : null}
 
       <div className="request-meta">
         <input

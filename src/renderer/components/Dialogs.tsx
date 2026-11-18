@@ -3,7 +3,6 @@ import {
   Collection,
   Environment,
   ExportFormat,
-  FolderVars,
   ImportFormat,
   KeyValue,
   createKeyValue,
@@ -455,32 +454,28 @@ export function EnvDialog({
   onDelete: (id: string) => Promise<void>;
   onActivate: (id: string | null) => Promise<void>;
 }) {
-  const [selectedId, setSelectedId] = React.useState<string | null>(activeId ?? environments[0]?.id ?? null);
+  const [selectedId, setSelectedId] = React.useState<string | null>(
+    activeId ?? environments[0]?.id ?? null,
+  );
   const current = environments.find((e) => e.id === selectedId) ?? null;
-  const [name, setName] = React.useState(current?.name ?? '');
-  const [rows, setRows] = React.useState<KeyValue[]>(current?.variables ?? []);
-  const [copied, setCopied] = React.useState('');
+  const [name, setName] = React.useState('');
+  const [baseUrl, setBaseUrl] = React.useState('');
+  const [headers, setHeaders] = React.useState<KeyValue[]>([]);
 
   React.useEffect(() => {
     setName(current?.name ?? '');
-    setRows(current?.variables ?? []);
+    setBaseUrl(current?.baseUrl ?? '');
+    setHeaders(current?.headers ?? []);
   }, [selectedId, environments.length]);
 
   const save = async () => {
-    await onSave({ id: current?.id, name: name || '新环境', variables: rows });
-  };
-
-  const copyVar = async (key: string) => {
-    if (!key) return;
-    await navigator.clipboard.writeText(`{{${key}}}`);
-    setCopied(key);
-    setTimeout(() => setCopied(''), 1500);
+    await onSave({ id: current?.id, name: name || '新环境', baseUrl: baseUrl.trim(), headers });
   };
 
   return (
     <Modal
-      title="环境变量"
-      subtitle="一次配置，多处引用：切换环境即可变更 baseUrl、token 等"
+      title="环境设置"
+      subtitle="统一 URL 前缀与请求头，发送时自动应用，不用在每个接口里重复填"
       onClose={onClose}
       wide
       footer={
@@ -510,12 +505,14 @@ export function EnvDialog({
         <b>怎么用</b>
         <ol className="guide-list">
           <li>
-            在下方添加变量，例如 <code>baseUrl = https://api.example.com</code>
+            填一次「URL 前缀」，接口里只写路径（例如 <code>/users</code>），发送时自动拼成完整地址
           </li>
           <li>
-            请求里写 <code>{'{{baseUrl}}/users'}</code>（URL、请求头、请求体、鉴权字段都支持）
+            「统一请求头」会自动加到每个请求上（如 <code>Authorization</code>），接口里写了同名 Header 时以接口为准
           </li>
-          <li>保存后点「启用」，发送时自动替换；未定义的变量会在 URL 下方标红提示</li>
+          <li>
+            请求地址本身以 <code>http(s)://</code> 开头时不会拼接前缀，方便单独调外部接口
+          </li>
         </ol>
       </div>
 
@@ -531,7 +528,7 @@ export function EnvDialog({
         />
         <input
           className="text-input"
-          style={{ flex: 1, fontFamily: 'inherit' }}
+          style={{ flex: 1, minWidth: 180, fontFamily: 'inherit' }}
           placeholder="环境名称，例如「测试环境」"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -545,82 +542,33 @@ export function EnvDialog({
         </button>
       </div>
 
-      <table className="kv-table">
-        <thead>
-          <tr>
-            <th style={{ width: 34 }} />
-            <th style={{ width: '32%' }}>变量名</th>
-            <th>值</th>
-            <th style={{ width: 34 }} title="复制 {{变量}}" />
-            <th style={{ width: 32 }} />
-          </tr>
-        </thead>
-        <tbody>
-          {[...rows, createKeyValue('', '')].map((row, index) => {
-            const isNew = index >= rows.length;
-            return (
-              <tr key={row.id} className={isNew ? 'virtual-row' : ''}>
-                <td className="check">
-                  <input
-                    type="checkbox"
-                    checked={isNew ? false : row.enabled}
-                    disabled={isNew}
-                    onChange={(e) =>
-                      setRows(rows.map((r, i) => (i === index ? { ...r, enabled: e.target.checked } : r)))
-                    }
-                  />
-                </td>
-                <td>
-                  <input
-                    type="text"
-                    value={row.key}
-                    placeholder={isNew ? 'baseUrl' : ''}
-                    onChange={(e) => {
-                      if (isNew) setRows([...rows, { ...createKeyValue(), key: e.target.value }]);
-                      else setRows(rows.map((r, i) => (i === index ? { ...r, key: e.target.value } : r)));
-                    }}
-                  />
-                </td>
-                <td>
-                  <input
-                    type="text"
-                    value={row.value}
-                    placeholder={isNew ? 'https://api.example.com' : ''}
-                    onChange={(e) => {
-                      if (isNew) setRows([...rows, { ...createKeyValue(), value: e.target.value }]);
-                      else setRows(rows.map((r, i) => (i === index ? { ...r, value: e.target.value } : r)));
-                    }}
-                  />
-                </td>
-                <td className="del">
-                  {!isNew && row.key && (
-                    <button
-                      className="icon-btn"
-                      title={`复制 {{${row.key}}}`}
-                      onClick={() => copyVar(row.key)}
-                    >
-                      <Icon name={copied === row.key ? 'check' : 'copy'} size={12} />
-                    </button>
-                  )}
-                </td>
-                <td className="del">
-                  {!isNew && (
-                    <button
-                      className="icon-btn danger"
-                      onClick={() => setRows(rows.filter((_, i) => i !== index))}
-                    >
-                      <Icon name="close" size={11} />
-                    </button>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-      <p className="help">
-        提示：启用某个环境后，顶栏「环境」按钮会显示该环境名称。切换环境不会修改请求本身，只改变变量取值。
-      </p>
+      <div>
+        <div className="field-label" style={{ marginBottom: 6 }}>
+          统一 URL 前缀
+        </div>
+        <input
+          className="text-input"
+          style={{ height: 36 }}
+          placeholder="https://api.example.com/v1"
+          value={baseUrl}
+          spellCheck={false}
+          onChange={(e) => setBaseUrl(e.target.value)}
+        />
+        <p className="help">留空则不拼接；接口里填完整地址时以接口为准。</p>
+      </div>
+
+      <div>
+        <div className="field-label" style={{ marginBottom: 6 }}>
+          统一请求头
+        </div>
+        <SimpleKVTable
+          items={headers}
+          onChange={setHeaders}
+          keyPlaceholder="Header，例如 Authorization"
+          valuePlaceholder="值，例如 Bearer eyJhbGciOi..."
+        />
+        <p className="help">取消勾选可临时停用；接口内同名 Header 会覆盖这里的值。</p>
+      </div>
     </Modal>
   );
 }
@@ -698,89 +646,5 @@ function SimpleKVTable({
         })}
       </tbody>
     </table>
-  );
-}
-
-export function FolderVarsDialog({
-  collectionName,
-  folder,
-  config,
-  requestCount,
-  onClose,
-  onSave,
-}: {
-  collectionName: string;
-  folder: string;
-  config: FolderVars | undefined;
-  requestCount: number;
-  onClose: () => void;
-  onSave: (variables: KeyValue[], headers: KeyValue[]) => Promise<void>;
-}) {
-  const [variables, setVariables] = React.useState<KeyValue[]>(config?.variables ?? []);
-  const [headers, setHeaders] = React.useState<KeyValue[]>(config?.headers ?? []);
-  const [busy, setBusy] = React.useState(false);
-
-  return (
-    <Modal
-      title={`目录设置 · ${folder}`}
-      subtitle={`${collectionName} / ${folder} · ${requestCount} 个接口`}
-      onClose={onClose}
-      wide
-      footer={
-        <>
-          <span className="help">保存后，该目录下所有接口自动继承</span>
-          <span className="spacer" />
-          <button className="chip-button" onClick={onClose}>
-            取消
-          </button>
-          <button
-            className="chip-button primary"
-            disabled={busy}
-            onClick={async () => {
-              setBusy(true);
-              try {
-                await onSave(variables, headers);
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            保存
-          </button>
-        </>
-      }
-    >
-      <div className="result-box guide">
-        <b>目录级配置</b>
-        <div className="guide-list" style={{ paddingLeft: 0, listStyle: 'none' }}>
-          · 变量：目录内请求可以用 <code>{'{{baseUrl}}'}</code>、<code>{'{{token}}'}</code>，未定义时回退到环境变量
-          <br />· 公共请求头：目录内所有请求发送时自动带上，请求里同名 Header 优先
-        </div>
-      </div>
-
-      <div>
-        <div className="field-label" style={{ marginBottom: 6 }}>
-          目录变量
-        </div>
-        <SimpleKVTable
-          items={variables}
-          onChange={setVariables}
-          keyPlaceholder="变量名，例如 baseUrl"
-          valuePlaceholder="值，例如 https://api.example.com"
-        />
-      </div>
-
-      <div>
-        <div className="field-label" style={{ marginBottom: 6 }}>
-          公共请求头
-        </div>
-        <SimpleKVTable
-          items={headers}
-          onChange={setHeaders}
-          keyPlaceholder="Header，例如 Authorization"
-          valuePlaceholder="值，例如 Bearer {{token}}"
-        />
-      </div>
-    </Modal>
   );
 }

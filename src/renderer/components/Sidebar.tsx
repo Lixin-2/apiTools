@@ -11,10 +11,9 @@ interface SidebarProps {
   onCreateProject: () => void;
   onRenameProject: (projectId: string) => void;
   onDeleteProject: () => void;
-  onFolderSettings: (collection: Collection, folder: string) => void;
   onCreateRequest: (collectionId: string, folder?: string) => void;
   onCreateCollection: () => void;
-  onCreateFolder: (collection: Collection) => void;
+  onCreateFolder: (collection: Collection, parentPath?: string) => void;
   onRenameFolder: (collection: Collection, folder: string) => void;
   onDeleteFolder: (collection: Collection, folder: string) => void;
   onDeleteRequest: (id: string) => void;
@@ -24,29 +23,51 @@ interface SidebarProps {
   onOpenMcp: () => void;
 }
 
-interface FolderGroup {
+interface FolderNode {
+  path: string;
   name: string;
-  items: ApiRequest[];
+  depth: number;
+  children: FolderNode[];
+  requests: ApiRequest[];
 }
 
-function folderVarCount(collection: Collection, folder: string): number {
-  const config = (collection.folderVars ?? []).find((item) => item.name === folder);
-  if (!config) return 0;
-  return (
-    config.variables.filter((variable) => variable.key).length +
-    config.headers.filter((header) => header.key).length
-  );
-}
+function buildTree(collection: Collection, requests: ApiRequest[]): FolderNode {
+  const root: FolderNode = { path: '', name: '', depth: -1, children: [], requests: [] };
+  const map = new Map<string, FolderNode>([['', root]]);
 
-function buildFolders(collection: Collection, requests: ApiRequest[]): FolderGroup[] {
-  const names: string[] = [...(collection.folders ?? [])];
-  for (const request of requests) {
-    if (request.folder && !names.includes(request.folder)) names.push(request.folder);
+  const ensure = (path: string): FolderNode => {
+    const found = map.get(path);
+    if (found) return found;
+    const segments = path.split('/');
+    const name = segments[segments.length - 1];
+    const parentPath = segments.slice(0, -1).join('/');
+    const parent = ensure(parentPath);
+    const node: FolderNode = {
+      path,
+      name,
+      depth: segments.length - 1,
+      children: [],
+      requests: [],
+    };
+    parent.children.push(node);
+    map.set(path, node);
+    return node;
+  };
+
+  for (const folder of collection.folders ?? []) {
+    if (folder.trim()) ensure(folder.trim());
   }
-  return names.map((name) => ({
-    name,
-    items: requests.filter((r) => r.folder === name),
-  }));
+  for (const request of requests) {
+    if (request.folder) ensure(request.folder).requests.push(request);
+    else root.requests.push(request);
+  }
+
+  const sort = (nodes: FolderNode[]) => {
+    nodes.sort((a, b) => a.name.localeCompare(b.name));
+    nodes.forEach((node) => sort(node.children));
+  };
+  sort(root.children);
+  return root;
 }
 
 export default function Sidebar(props: SidebarProps) {
@@ -61,13 +82,16 @@ export default function Sidebar(props: SidebarProps) {
 
   const visible = React.useMemo(() => {
     if (!q) return { collections, requests };
-    const matched = requests.filter((r) =>
-      `${r.name} ${r.url} ${r.method} ${r.folder}`.toLowerCase().includes(q),
+    const matched = requests.filter((request) =>
+      `${request.name} ${request.url} ${request.method} ${request.folder}`.toLowerCase().includes(q),
     );
-    const folderHit = (c: Collection) => (c.folders ?? []).some((f) => f.toLowerCase().includes(q));
-    const ids = new Set(matched.map((r) => r.collectionId));
+    const folderHit = (collection: Collection) =>
+      (collection.folders ?? []).some((folder) => folder.toLowerCase().includes(q));
+    const ids = new Set(matched.map((request) => request.collectionId));
     return {
-      collections: collections.filter((c) => ids.has(c.id) || folderHit(c) || c.name.toLowerCase().includes(q)),
+      collections: collections.filter(
+        (collection) => ids.has(collection.id) || folderHit(collection) || collection.name.toLowerCase().includes(q),
+      ),
       requests: matched,
     };
   }, [collections, requests, q]);
@@ -94,6 +118,66 @@ export default function Sidebar(props: SidebarProps) {
       </span>
     </div>
   );
+
+  const renderFolder = (collection: Collection, node: FolderNode) => {
+    const key = `${collection.id}:${node.path}`;
+    const isCollapsed = collapsedFolders[key] ?? false;
+    return (
+      <div className="folder-block" key={key}>
+        <div
+          className="folder-row"
+          style={{ paddingLeft: 14 + node.depth * 14 }}
+          onClick={() => toggleFolder(key)}
+        >
+          <span className={`chevron ${isCollapsed ? '' : 'open'}`}>
+            <Icon name="chevron" size={10} />
+          </span>
+          <Icon name="folder" size={13} style={{ color: 'var(--text-faint)' }} />
+          <span className="name" title={node.path}>
+            {node.name}
+          </span>
+          <span className="count-pill">{node.requests.length}</span>
+          <span className="row-actions" onClick={(e) => e.stopPropagation()}>
+            <button
+              className="icon-btn"
+              title="在此目录新建请求"
+              onClick={() => props.onCreateRequest(collection.id, node.path)}
+            >
+              <Icon name="plus" size={12} />
+            </button>
+            <button
+              className="icon-btn"
+              title="新建子目录"
+              onClick={() => props.onCreateFolder(collection, node.path)}
+            >
+              <Icon name="folder-plus" size={12} />
+            </button>
+            <button
+              className="icon-btn"
+              title="重命名目录"
+              onClick={() => props.onRenameFolder(collection, node.path)}
+            >
+              <Icon name="edit" size={11} />
+            </button>
+            <button
+              className="icon-btn danger"
+              title="删除目录（含子目录，接口会移到集合根级）"
+              onClick={() => props.onDeleteFolder(collection, node.path)}
+            >
+              <Icon name="trash" size={12} />
+            </button>
+          </span>
+        </div>
+        {!isCollapsed && (
+          <>
+            {node.requests.map((req) => renderRequest(req, true))}
+            {node.children.map((child) => renderFolder(collection, child))}
+            {!node.requests.length && !node.children.length && <div className="folder-empty">空目录</div>}
+          </>
+        )}
+      </div>
+    );
+  };
 
   return (
     <aside className="sidebar">
@@ -122,12 +206,10 @@ export default function Sidebar(props: SidebarProps) {
         <Icon name="layers" size={14} style={{ color: 'var(--accent)', flex: '0 0 auto' }} />
         <Select
           value={workspace?.activeProjectId ?? ''}
-          options={
-            (workspace?.projects ?? []).map((project) => ({
-              value: project.id,
-              label: project.name,
-            })) || []
-          }
+          options={(workspace?.projects ?? []).map((project) => ({
+            value: project.id,
+            label: project.name,
+          }))}
           onChange={props.onSelectProject}
           className="project-select"
           style={{ flex: 1, minWidth: 0 }}
@@ -165,10 +247,9 @@ export default function Sidebar(props: SidebarProps) {
           </div>
         )}
         {visible.collections.map((collection) => {
-          const items = visible.requests.filter((r) => r.collectionId === collection.id);
+          const items = visible.requests.filter((request) => request.collectionId === collection.id);
           const isCollapsed = collapsed[collection.id] ?? false;
-          const folders = buildFolders(collection, items);
-          const rootItems = items.filter((r) => !r.folder);
+          const tree = buildTree(collection, items);
 
           return (
             <div className="collection" key={collection.id}>
@@ -214,68 +295,9 @@ export default function Sidebar(props: SidebarProps) {
 
               {!isCollapsed && (
                 <>
-                  {rootItems.map((req) => renderRequest(req, false))}
-
-                  {folders.map((folder) => {
-                    const key = `${collection.id}:${folder.name}`;
-                    const folderCollapsed = collapsedFolders[key] ?? false;
-                    return (
-                      <div className="folder-block" key={key}>
-                        <div className="folder-row" onClick={() => toggleFolder(key)}>
-                          <span className={`chevron ${folderCollapsed ? '' : 'open'}`}>
-                            <Icon name="chevron" size={10} />
-                          </span>
-                          <Icon name="folder" size={13} style={{ color: 'var(--text-faint)' }} />
-                          <span className="name">{folder.name}</span>
-                          {folderVarCount(collection, folder.name) > 0 && (
-                            <span className="var-chip" title="该目录配置了变量/公共请求头">
-                              <Icon name="key" size={9} />
-                              {folderVarCount(collection, folder.name)}
-                            </span>
-                          )}
-                          <span className="count-pill">{folder.items.length}</span>
-                          <span className="row-actions" onClick={(e) => e.stopPropagation()}>
-                            <button
-                              className="icon-btn"
-                              title="在目录中新建请求"
-                              onClick={() => props.onCreateRequest(collection.id, folder.name)}
-                            >
-                              <Icon name="plus" size={12} />
-                            </button>
-                            <button
-                              className="icon-btn"
-                              title="目录变量与公共请求头"
-                              onClick={() => props.onFolderSettings(collection, folder.name)}
-                            >
-                              <Icon name="key" size={12} />
-                            </button>
-                            <button
-                              className="icon-btn"
-                              title="重命名目录"
-                              onClick={() => props.onRenameFolder(collection, folder.name)}
-                            >
-                              <Icon name="edit" size={11} />
-                            </button>
-                            <button
-                              className="icon-btn danger"
-                              title="删除目录（接口会移到集合根级）"
-                              onClick={() => props.onDeleteFolder(collection, folder.name)}
-                            >
-                              <Icon name="trash" size={12} />
-                            </button>
-                          </span>
-                        </div>
-                        {!folderCollapsed &&
-                          (folder.items.length ? (
-                            folder.items.map((req) => renderRequest(req, true))
-                          ) : (
-                            <div className="folder-empty">空目录 · 点上方 + 新建请求</div>
-                          ))}
-                      </div>
-                    );
-                  })}
-
-                  {!rootItems.length && !folders.length && (
+                  {tree.requests.map((req) => renderRequest(req, false))}
+                  {tree.children.map((child) => renderFolder(collection, child))}
+                  {!tree.requests.length && !tree.children.length && (
                     <div className="folder-empty" style={{ paddingLeft: 30 }}>
                       暂无接口
                     </div>

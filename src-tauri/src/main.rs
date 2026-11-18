@@ -381,13 +381,68 @@ async fn send_request(payload: Value) -> Result<Value, String> {
         .unwrap_or_default()
         .to_string();
     let timeout = payload.get("timeoutMs").and_then(|v| v.as_u64());
+    let parts: Vec<http_client::FormPart> = payload
+        .get("formFields")
+        .and_then(|value| serde_json::from_value::<Vec<FormField>>(value.clone()).ok())
+        .map(|fields| {
+            fields
+                .into_iter()
+                .filter(|field| field.enabled && !field.key.trim().is_empty())
+                .map(|field| http_client::FormPart {
+                    name: field.key,
+                    value: if field.kind == "file" {
+                        None
+                    } else {
+                        Some(field.value)
+                    },
+                    file_path: if field.kind == "file" {
+                        field.file_path
+                    } else {
+                        None
+                    },
+                    file_name: field.file_name,
+                    mime: field.mime,
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
 
     let response = tauri::async_runtime::spawn_blocking(move || {
-        http_client::execute(&method, &url, &headers, Some(&body), timeout)
+        if parts.is_empty() {
+            http_client::execute(&method, &url, &headers, Some(&body), timeout)
+        } else {
+            http_client::execute_multipart(&method, &url, &headers, &parts, timeout)
+        }
     })
     .await
     .map_err(|e| e.to_string())?;
     serde_json::to_value(response).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn pick_file(app: tauri::AppHandle) -> Result<Option<Value>, String> {
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog()
+            .file()
+            .set_title("选择要上传的文件")
+            .blocking_pick_file()
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    let Some(target) = picked else {
+        return Ok(None);
+    };
+    let path = target.into_path().map_err(|e| e.to_string())?;
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_else(|| "file".to_string());
+    let size = std::fs::metadata(&path).map(|meta| meta.len()).unwrap_or(0);
+    Ok(Some(json!({
+        "path": path.to_string_lossy(),
+        "name": name,
+        "size": size
+    })))
 }
 
 #[tauri::command]
@@ -700,6 +755,7 @@ fn main() {
             delete_request,
             get_request,
             send_request,
+            pick_file,
             import_text,
             import_file,
             export_collection,

@@ -22,7 +22,7 @@ import {
   McpDialog,
   Modal,
 } from './components/Dialogs';
-import { Icon, Select } from './components/ui';
+import { AppMark, Icon, Select } from './components/ui';
 
 type DialogKey = 'import' | 'mcp' | 'env' | null;
 type ThemeMode = 'light' | 'dark' | 'system';
@@ -388,8 +388,15 @@ export default function App() {
         }
       }
 
-      const body = substituteVars(draft.body, vars);
-      if (body && draft.bodyType !== 'none') {
+      let body = substituteVars(draft.body, vars);
+      if (draft.bodyType === 'urlencoded') {
+        body = (draft.formFields ?? [])
+          .filter((field) => field.enabled && field.key)
+          .map((field) => `${encodeURIComponent(field.key)}=${encodeURIComponent(field.value ?? '')}`)
+          .join('&');
+      }
+
+      if (draft.bodyType !== 'none' && draft.bodyType !== 'form') {
         const hasContentType = Object.keys(headers).some((k) => k.toLowerCase() === 'content-type');
         if (!hasContentType) {
           headers['Content-Type'] =
@@ -405,7 +412,8 @@ export default function App() {
         method: draft.method,
         url,
         headers,
-        body: draft.bodyType === 'none' ? '' : body,
+        body: draft.bodyType === 'none' || draft.bodyType === 'form' ? '' : body,
+        formFields: draft.bodyType === 'form' ? draft.formFields ?? [] : undefined,
       });
       setResponse(result);
     } catch (error: any) {
@@ -479,7 +487,7 @@ export default function App() {
     <div className="app">
       <header className="titlebar" data-tauri-drag-region>
         <div className="brand">
-          <div className="brand-mark">a</div>
+          <AppMark size={22} />
           apiTools
           <span className="brand-sub">REST 接口管理 · MCP 就绪</span>
         </div>
@@ -510,26 +518,27 @@ export default function App() {
             <Icon name="robot" size={13} />
             MCP
           </button>
-          <div className="theme-picker" title="外观">
-            <Icon
-              name={
-                themeMode === 'system' ? 'monitor' : resolvedTheme === 'dark' ? 'moon' : 'sun'
-              }
-              size={13}
-            />
-            <Select
-              value={themeMode}
-              onChange={(value) => setThemeMode(value as ThemeMode)}
-              options={[
-                { value: 'light', label: '浅色' },
-                { value: 'dark', label: '深色' },
-                { value: 'system', label: '跟随系统' },
-              ]}
-              size="sm"
-              style={{ width: 116 }}
-              menuWidth={140}
-            />
-          </div>
+          <Select
+            value={themeMode}
+            onChange={(value) => setThemeMode(value as ThemeMode)}
+            options={[
+              { value: 'light', label: '浅色' },
+              { value: 'dark', label: '深色' },
+              { value: 'system', label: '跟随系统' },
+            ]}
+            size="sm"
+            icon={
+              <Icon
+                name={
+                  themeMode === 'system' ? 'monitor' : resolvedTheme === 'dark' ? 'moon' : 'sun'
+                }
+                size={13}
+              />
+            }
+            className="theme-select"
+            style={{ width: 136 }}
+            menuWidth={150}
+          />
           <button
             className="chip-button ghost"
             title="刷新数据"

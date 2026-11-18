@@ -217,6 +217,7 @@ export function Select({
   align = 'left',
   menuWidth,
   style,
+  icon,
 }: {
   value: string;
   options: SelectOption[];
@@ -227,6 +228,7 @@ export function Select({
   align?: 'left' | 'right';
   menuWidth?: number;
   style?: React.CSSProperties;
+  icon?: React.ReactNode;
 }) {
   const [open, setOpen] = React.useState(false);
   const [anchor, setAnchor] = React.useState<{ left: number; top: number; width: number } | null>(null);
@@ -293,6 +295,7 @@ export function Select({
         style={color ? { color } : undefined}
         onClick={() => (open ? setOpen(false) : openMenu())}
       >
+        {icon && <span className="select-icon">{icon}</span>}
         <span className="select-value">{current?.label ?? value}</span>
         <Icon name="chevron-down" size={11} />
       </button>
@@ -329,6 +332,30 @@ export function Select({
           document.body,
         )}
     </div>
+  );
+}
+
+/** 品牌标记：与新应用图标一致，随主题自动切换底色 */
+export function AppMark({ size = 22 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 64 64" className="app-mark" aria-hidden>
+      <defs>
+        <linearGradient id="app-mark-line" x1="21" y1="43" x2="43" y2="21" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#7c5cff" />
+          <stop offset="1" stopColor="#22d3ee" />
+        </linearGradient>
+      </defs>
+      <rect x="2" y="2" width="60" height="60" rx="15" className="app-mark-bg" />
+      <path
+        d="M21 43c0-11 22-9 22-22"
+        fill="none"
+        stroke="url(#app-mark-line)"
+        strokeWidth="7"
+        strokeLinecap="round"
+      />
+      <circle cx="21" cy="43" r="9" className="app-mark-node" />
+      <circle cx="43" cy="21" r="9" className="app-mark-node" />
+    </svg>
   );
 }
 

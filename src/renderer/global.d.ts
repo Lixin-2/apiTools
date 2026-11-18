@@ -3,6 +3,7 @@ import type {
   Collection,
   Environment,
   ExportFormat,
+  FormField,
   ImportFormat,
   KeyValue,
   ProjectSummary,
@@ -66,8 +67,10 @@ export interface ApiToolsApi {
     url: string;
     headers?: Record<string, string>;
     body?: string;
+    formFields?: FormField[];
     timeoutMs?: number;
   }): Promise<SendResponse>;
+  pickFile(): Promise<{ path: string; name: string; size: number } | null>;
   importText(payload: {
     content: string;
     format?: ImportFormat;

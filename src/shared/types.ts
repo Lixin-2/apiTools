@@ -27,6 +27,19 @@ export interface KeyValue {
 
 export type BodyType = 'none' | 'json' | 'text' | 'form' | 'urlencoded';
 
+export type FormFieldKind = 'text' | 'file';
+
+export interface FormField {
+  id: string;
+  key: string;
+  value: string;
+  enabled: boolean;
+  kind: FormFieldKind;
+  filePath?: string;
+  fileName?: string;
+  mime?: string;
+}
+
 export type AuthType = 'none' | 'bearer' | 'basic' | 'apikey';
 
 export interface AuthConfig {
@@ -50,6 +63,8 @@ export interface ApiRequest {
   headers: KeyValue[];
   bodyType: BodyType;
   body: string;
+  /** bodyType 为 form / urlencoded 时的键值对，支持文件字段 */
+  formFields: FormField[];
   auth: AuthConfig;
   description: string;
   createdAt: number;
@@ -200,6 +215,7 @@ export function createRequest(input: Partial<ApiRequest> = {}): ApiRequest {
     headers: input.headers ?? [],
     bodyType: input.bodyType ?? 'none',
     body: input.body ?? '',
+    formFields: input.formFields ?? [],
     auth: input.auth ?? emptyAuth(),
     description: input.description ?? '',
     createdAt: input.createdAt ?? now,

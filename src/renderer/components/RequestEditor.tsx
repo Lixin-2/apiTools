@@ -2,6 +2,7 @@ import React from 'react';
 import {
   ApiRequest,
   BodyType,
+  FormField,
   HTTP_METHODS,
   HttpMethod,
   KeyValue,
@@ -127,6 +128,172 @@ function KeyValueEditor({
   );
 }
 
+/** 兼容旧数据：把 body 里的 a=1&b=2 解析成表单字段 */
+function parseLegacyFormFields(body: string): FormField[] {
+  return body
+    .split('&')
+    .map((pair) => pair.trim())
+    .filter(Boolean)
+    .map((pair) => {
+      const index = pair.indexOf('=');
+      const key = index === -1 ? pair : pair.slice(0, index);
+      const value = index === -1 ? '' : pair.slice(index + 1);
+      return { ...emptyFormField(), key, value };
+    });
+}
+
+function emptyFormField(): FormField {
+  return {
+    id: `ff_${Math.random().toString(36).slice(2, 10)}`,
+    key: '',
+    value: '',
+    enabled: true,
+    kind: 'text',
+  };
+}
+
+function FormFieldsEditor({
+  items,
+  onChange,
+  allowFiles,
+}: {
+  items: FormField[];
+  onChange: (items: FormField[]) => void;
+  allowFiles: boolean;
+}) {
+  const rows = [...items, emptyFormField()];
+
+  const update = (index: number, patch: Partial<FormField>) => {
+    if (index >= items.length) {
+      onChange([...items, { ...emptyFormField(), ...patch }]);
+      return;
+    }
+    onChange(items.map((item, i) => (i === index ? { ...item, ...patch } : item)));
+  };
+
+  const pickFile = async (index: number) => {
+    const picked = await window.api.pickFile();
+    if (!picked) return;
+    update(index, {
+      kind: 'file',
+      filePath: picked.path,
+      fileName: picked.name,
+      value: '',
+    });
+  };
+
+  return (
+    <>
+      <table className="kv-table form-table">
+        <thead>
+          <tr>
+            <th style={{ width: 34 }} />
+            {allowFiles && <th style={{ width: 104 }}>类型</th>}
+            <th style={{ width: '28%' }}>字段名</th>
+            <th>值</th>
+            <th style={{ width: 32 }} />
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => {
+            const isNew = index >= items.length;
+            const isFile = allowFiles && row.kind === 'file';
+            return (
+              <tr
+                key={row.id}
+                className={`${!isNew && !row.enabled ? 'disabled' : ''} ${isNew ? 'virtual-row' : ''}`}
+              >
+                <td className="check">
+                  <input
+                    type="checkbox"
+                    checked={isNew ? false : row.enabled}
+                    disabled={isNew}
+                    onChange={(e) => update(index, { enabled: e.target.checked })}
+                  />
+                </td>
+                {allowFiles && (
+                  <td className="kind-cell">
+                    {!isNew && (
+                      <div className="seg seg-mini">
+                        <button
+                          className={row.kind !== 'file' ? 'active' : ''}
+                          onClick={() => update(index, { kind: 'text' })}
+                          title="文本"
+                        >
+                          文本
+                        </button>
+                        <button
+                          className={row.kind === 'file' ? 'active' : ''}
+                          onClick={() => update(index, { kind: 'file' })}
+                          title="文件"
+                        >
+                          文件
+                        </button>
+                      </div>
+                    )}
+                  </td>
+                )}
+                <td>
+                  <input
+                    type="text"
+                    value={row.key}
+                    placeholder={isNew ? '字段名' : ''}
+                    onChange={(e) => update(index, { key: e.target.value })}
+                  />
+                </td>
+                <td>
+                  {isFile ? (
+                    <div className="file-cell">
+                      <button className="file-btn" onClick={() => pickFile(index)}>
+                        <Icon name="upload" size={12} />
+                        {row.fileName || '选择文件'}
+                      </button>
+                      {row.filePath && (
+                        <span className="file-path" title={row.filePath}>
+                          {row.filePath}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <input
+                      type="text"
+                      value={row.value}
+                      placeholder={isNew ? '值' : ''}
+                      onChange={(e) => update(index, { value: e.target.value })}
+                    />
+                  )}
+                </td>
+                <td className="del">
+                  {!isNew && (
+                    <button className="icon-btn danger" onClick={() => onChange(items.filter((_, i) => i !== index))}>
+                      <Icon name="close" size={11} />
+                    </button>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <div className="add-row">
+        <button className="chip-button ghost" onClick={() => onChange([...items, emptyFormField()])}>
+          <Icon name="plus" size={12} />
+          添加一行
+        </button>
+        {allowFiles && (
+          <button
+            className="chip-button ghost"
+            onClick={() => onChange([...items, { ...emptyFormField(), kind: 'file' }])}
+          >
+            <Icon name="upload" size={12} />
+            添加文件
+          </button>
+        )}
+      </div>
+    </>
+  );
+}
+
 export default function RequestEditor({
   draft,
   dirty,
@@ -157,6 +324,16 @@ export default function RequestEditor({
     }
     onChange({ url: value });
   };
+
+  const jsonError = React.useMemo(() => {
+    if (draft.bodyType !== 'json' || !draft.body.trim()) return '';
+    try {
+      JSON.parse(draft.body);
+      return '';
+    } catch (error: any) {
+      return error?.message ?? '解析失败';
+    }
+  }, [draft.bodyType, draft.body]);
 
   const formatBody = () => {
     try {
@@ -306,30 +483,62 @@ export default function RequestEditor({
                   </button>
                 ))}
               </div>
-              {(draft.bodyType === 'json' || draft.bodyType === 'text') && draft.body && (
-                <button className="chip-button ghost" onClick={formatBody}>
+              {(draft.bodyType === 'json' || draft.bodyType === 'text') && (
+                <button className="chip-button ghost" onClick={formatBody} disabled={!draft.body.trim()}>
                   <Icon name="spark" size={12} />
                   格式化
                 </button>
               )}
+              {draft.bodyType === 'json' && !!draft.body.trim() && (
+                <span className={`body-valid ${jsonError ? 'invalid' : ''}`}>
+                  <Icon name={jsonError ? 'info' : 'check'} size={11} />
+                  {jsonError ? 'JSON 格式有误' : 'JSON 合法'}
+                </span>
+              )}
             </div>
-            {draft.bodyType === 'none' ? (
-              <p className="help">该请求不携带请求体。</p>
-            ) : (
-              <VarInput
-                multiline
-                className="code-area"
-                value={draft.body}
-                variables={variables}
-                onChange={(body) => onChange({ body })}
-                placeholder={
-                  draft.bodyType === 'json'
-                    ? '{\n  "name": "value"\n}'
-                    : draft.bodyType === 'form' || draft.bodyType === 'urlencoded'
-                      ? 'key1=value1&key2=value2'
+
+            {draft.bodyType === 'none' && <p className="help">该请求不携带请求体。</p>}
+
+            {(draft.bodyType === 'json' || draft.bodyType === 'text') && (
+              <>
+                <VarInput
+                  multiline
+                  className="code-area"
+                  value={draft.body}
+                  variables={variables}
+                  onChange={(body) => onChange({ body })}
+                  placeholder={
+                    draft.bodyType === 'json'
+                      ? '{\n  "name": "value"\n}'
                       : '请求体内容'
-                }
-              />
+                  }
+                />
+                {draft.bodyType === 'json' && jsonError && (
+                  <div className="body-error">
+                    <Icon name="info" size={12} />
+                    <span>{jsonError}</span>
+                  </div>
+                )}
+              </>
+            )}
+
+            {(draft.bodyType === 'form' || draft.bodyType === 'urlencoded') && (
+              <>
+                <FormFieldsEditor
+                  items={
+                    draft.formFields?.length
+                      ? draft.formFields
+                      : parseLegacyFormFields(draft.body)
+                  }
+                  allowFiles={draft.bodyType === 'form'}
+                  onChange={(formFields) => onChange({ formFields })}
+                />
+                <p className="help" style={{ marginTop: 8 }}>
+                  {draft.bodyType === 'form'
+                    ? 'multipart/form-data：文本字段与文件会一起提交，Content-Type 与 boundary 发送时自动生成。'
+                    : 'application/x-www-form-urlencoded：发送时按字段名与值自动编码拼接。'}
+                </p>
+              </>
             )}
           </div>
         )}

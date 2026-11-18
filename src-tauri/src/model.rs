@@ -56,6 +56,32 @@ impl KeyValue {
     }
 }
 
+fn default_field_kind() -> String {
+    "text".to_string()
+}
+
+/// 表单字段（multipart / urlencoded），kind = text | file
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FormField {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub key: String,
+    #[serde(default)]
+    pub value: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_field_kind")]
+    pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mime: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthConfig {
@@ -112,6 +138,9 @@ pub struct ApiRequest {
     pub body_type: String,
     #[serde(default)]
     pub body: String,
+    /// bodyType = form / urlencoded 时的键值对（支持文件）
+    #[serde(default)]
+    pub form_fields: Vec<FormField>,
     #[serde(default)]
     pub auth: AuthConfig,
     #[serde(default)]
@@ -135,6 +164,7 @@ impl Default for ApiRequest {
             headers: Vec::new(),
             body_type: "none".to_string(),
             body: String::new(),
+            form_fields: Vec::new(),
             auth: AuthConfig::default(),
             description: String::new(),
             created_at: now_ms(),

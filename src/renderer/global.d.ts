@@ -3,7 +3,10 @@ import type {
   Collection,
   Environment,
   ExportFormat,
+  FolderVars,
   ImportFormat,
+  KeyValue,
+  ProjectSummary,
   SendResponse,
   Workspace,
 } from '../shared/types';
@@ -35,6 +38,19 @@ export interface ApiToolsApi {
   createCollection(name: string, description?: string): Promise<Collection>;
   updateCollection(id: string, patch: Partial<Collection>): Promise<Collection | null>;
   deleteCollection(id: string): Promise<boolean>;
+  createFolder(collectionId: string, name: string): Promise<string[]>;
+  renameFolder(collectionId: string, oldName: string, newName: string): Promise<string[]>;
+  deleteFolder(collectionId: string, name: string): Promise<string[]>;
+  setFolderConfig(
+    collectionId: string,
+    name: string,
+    variables: KeyValue[],
+    headers: KeyValue[],
+  ): Promise<FolderVars>;
+  createProject(name: string, description?: string): Promise<ProjectSummary>;
+  renameProject(id: string, name: string, description?: string): Promise<void>;
+  deleteProject(id: string): Promise<boolean>;
+  setActiveProject(id: string): Promise<void>;
   saveRequest(input: Partial<ApiRequest>): Promise<ApiRequest>;
   deleteRequest(id: string): Promise<boolean>;
   getRequest(id: string): Promise<ApiRequest | null>;

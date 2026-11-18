@@ -15,7 +15,14 @@ import type { AppInfo, ImportOutcome } from './global';
 import Sidebar from './components/Sidebar';
 import RequestEditor from './components/RequestEditor';
 import ResponseView from './components/ResponseView';
-import { EnvDialog, ExportDialog, ImportDialog, McpDialog, Modal } from './components/Dialogs';
+import {
+  EnvDialog,
+  ExportDialog,
+  FolderVarsDialog,
+  ImportDialog,
+  McpDialog,
+  Modal,
+} from './components/Dialogs';
 import { Icon } from './components/ui';
 
 type DialogKey = 'import' | 'mcp' | 'env' | null;
@@ -46,6 +53,9 @@ export default function App() {
   const [sending, setSending] = React.useState(false);
   const [dialog, setDialog] = React.useState<DialogKey>(null);
   const [exportTarget, setExportTarget] = React.useState<Collection | null>(null);
+  const [folderSettings, setFolderSettings] = React.useState<{ collection: Collection; folder: string } | null>(
+    null,
+  );
   const [toast, setToast] = React.useState('');
   const [promptState, setPromptState] = React.useState<{
     title: string;
@@ -53,6 +63,54 @@ export default function App() {
     placeholder?: string;
     onSubmit: (value: string) => void;
   } | null>(null);
+
+  const [theme, setTheme] = React.useState<'dark' | 'light'>(() => {
+    const saved = localStorage.getItem('apitools-theme');
+    return saved === 'light' ? 'light' : 'dark';
+  });
+
+  React.useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem('apitools-theme', theme);
+  }, [theme]);
+
+  const [sidebarWidth, setSidebarWidth] = React.useState<number>(() => {
+    const saved = Number(localStorage.getItem('apitools-sidebar-width'));
+    return Number.isFinite(saved) && saved >= 220 ? saved : 272;
+  });
+  const [editorHeight, setEditorHeight] = React.useState<number>(() => {
+    const saved = Number(localStorage.getItem('apitools-editor-height'));
+    return Number.isFinite(saved) && saved >= 180 ? saved : 360;
+  });
+  const mainRef = React.useRef<HTMLElement>(null);
+
+  React.useEffect(() => {
+    localStorage.setItem('apitools-sidebar-width', String(sidebarWidth));
+  }, [sidebarWidth]);
+  React.useEffect(() => {
+    localStorage.setItem('apitools-editor-height', String(editorHeight));
+  }, [editorHeight]);
+
+  const startResize = (kind: 'sidebar' | 'editor') => (event: React.MouseEvent) => {
+    event.preventDefault();
+    const onMove = (moveEvent: MouseEvent) => {
+      if (kind === 'sidebar') {
+        setSidebarWidth(Math.min(480, Math.max(220, moveEvent.clientX)));
+      } else {
+        const rect = mainRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        setEditorHeight(Math.min(rect.height - 180, Math.max(190, moveEvent.clientY - rect.top)));
+      }
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.classList.remove('resizing-col', 'resizing-row');
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    document.body.classList.add(kind === 'sidebar' ? 'resizing-col' : 'resizing-row');
+  };
 
   const toastTimer = React.useRef<NodeJS.Timeout | null>(null);
   const showToast = (message: string) => {
@@ -102,7 +160,21 @@ export default function App() {
   }, [savedSnapshot]);
 
   const activeEnv = workspace?.environments.find((e) => e.id === workspace.activeEnvironmentId);
-  const variables = activeEnv?.variables ?? [];
+  const currentCollection = workspace?.collections.find((c) => c.id === draft?.collectionId);
+  const currentFolderConfig = currentCollection?.folderVars?.find((f) => f.name === draft?.folder);
+
+  // 变量优先级：目录变量 > 环境变量
+  const variables = React.useMemo(() => {
+    const map = new Map<string, KeyValue>();
+    for (const variable of activeEnv?.variables ?? []) {
+      if (variable.key) map.set(variable.key, variable);
+    }
+    for (const variable of currentFolderConfig?.variables ?? []) {
+      if (variable.key) map.set(variable.key, { ...variable, id: `folder_${variable.id}` });
+    }
+    return [...map.values()];
+  }, [activeEnv, currentFolderConfig]);
+
   const dirty = draft ? JSON.stringify(draft) !== savedSnapshot : false;
 
   const openRequest = (req: ApiRequest) => {
@@ -125,10 +197,11 @@ export default function App() {
     return saved;
   };
 
-  const createRequestIn = async (collectionId: string) => {
+  const createRequestIn = async (collectionId: string, folder = '') => {
     const created = await window.api.saveRequest(
       createRequest({
         collectionId,
+        folder,
         name: '新建请求',
         url: 'https://',
         method: 'GET',
@@ -138,12 +211,126 @@ export default function App() {
     openRequest(created);
   };
 
+  const createFolderIn = (collection: Collection) =>
+    prompt(
+      '新建目录',
+      '',
+      async (value) => {
+        const name = value.trim();
+        if (!name) return;
+        try {
+          await window.api.createFolder(collection.id, name);
+          await reload();
+          showToast(`目录「${name}」已创建`);
+        } catch (error: any) {
+          showToast(error?.message ?? String(error));
+        }
+      },
+      '目录名称，例如「用户中心」',
+    );
+
+  const renameFolderIn = (collection: Collection, folder: string) =>
+    prompt(
+      '重命名目录',
+      folder,
+      async (value) => {
+        const name = value.trim();
+        if (!name || name === folder) return;
+        try {
+          await window.api.renameFolder(collection.id, folder, name);
+          await reload();
+          if (draft?.collectionId === collection.id && draft.folder === folder) {
+            setDraft({ ...draft, folder: name });
+          }
+          showToast('目录已重命名');
+        } catch (error: any) {
+          showToast(error?.message ?? String(error));
+        }
+      },
+      '新的目录名称',
+    );
+
+  const switchProject = async (id: string) => {
+    if (!id || workspace?.activeProjectId === id) return;
+    await window.api.setActiveProject(id);
+    const ws = await reload();
+    const first = ws.requests[0] ?? null;
+    setDraft(first);
+    setSavedSnapshot(first ? JSON.stringify(first) : '');
+    setResponse(null);
+    showToast(`已切换到项目「${ws.projects.find((p) => p.id === id)?.name ?? ''}」`);
+  };
+
+  const createProjectPrompt = () =>
+    prompt(
+      '新建项目',
+      '',
+      async (value) => {
+        const name = value.trim();
+        if (!name) return;
+        await window.api.createProject(name);
+        const ws = await reload();
+        const first = ws.requests[0] ?? null;
+        setDraft(first);
+        setSavedSnapshot(first ? JSON.stringify(first) : '');
+        setResponse(null);
+        showToast(`项目「${name}」已创建`);
+      },
+      '项目名称，例如「电商后台」',
+    );
+
+  const renameProjectPrompt = (id: string) => {
+    const current = workspace?.projects.find((p) => p.id === id);
+    prompt(
+      '重命名项目',
+      current?.name ?? '',
+      async (value) => {
+        const name = value.trim();
+        if (!name) return;
+        await window.api.renameProject(id, name);
+        await reload();
+        showToast('项目已重命名');
+      },
+      '新的项目名称',
+    );
+  };
+
+  const deleteProjectConfirm = async () => {
+    const id = workspace?.activeProjectId;
+    if (!id) return;
+    if (!window.confirm('删除当前项目及其下所有集合、接口？此操作不可撤销。')) return;
+    try {
+      await window.api.deleteProject(id);
+      const ws = await reload();
+      const first = ws.requests[0] ?? null;
+      setDraft(first);
+      setSavedSnapshot(first ? JSON.stringify(first) : '');
+      setResponse(null);
+      showToast('项目已删除');
+    } catch (error: any) {
+      showToast(error?.message ?? String(error));
+    }
+  };
+
+  const deleteFolderIn = async (collection: Collection, folder: string) => {
+    if (!window.confirm(`删除目录「${folder}」？目录内的接口会移到集合根级，不会被删除。`)) return;
+    await window.api.deleteFolder(collection.id, folder);
+    await reload();
+    if (draft?.collectionId === collection.id && draft.folder === folder) {
+      setDraft({ ...draft, folder: '' });
+    }
+    showToast('目录已删除');
+  };
+
   const send = async () => {
     if (!draft || sending) return;
     setSending(true);
     setResponse(null);
     try {
-      const vars = envVarsOf(activeEnv);
+      const vars: Record<string, string> = {};
+      for (const variable of variables) {
+        if (variable.enabled && variable.key) vars[variable.key] = variable.value;
+      }
       let url = substituteVars(draft.url, vars);
       const params: KeyValue[] = draft.params.map((p) => ({
         ...p,
@@ -153,6 +340,11 @@ export default function App() {
       url = applyParams(url, params);
 
       const headers: Record<string, string> = {};
+      // 目录级公共请求头（请求内同名 Header 会覆盖）
+      for (const header of currentFolderConfig?.headers ?? []) {
+        if (!header.enabled || !header.key) continue;
+        headers[substituteVars(header.key, vars)] = substituteVars(header.value, vars);
+      }
       for (const h of draft.headers) {
         if (!h.enabled || !h.key) continue;
         headers[substituteVars(h.key, vars)] = substituteVars(h.value, vars);
@@ -296,6 +488,13 @@ export default function App() {
             MCP
           </button>
           <button
+            className="chip-button ghost theme-toggle"
+            title={theme === 'dark' ? '切换到浅色模式' : '切换到夜间模式'}
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          >
+            <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={14} />
+          </button>
+          <button
             className="chip-button ghost"
             title="刷新数据"
             onClick={async () => {
@@ -309,11 +508,17 @@ export default function App() {
       </header>
 
       <div className="body">
-        <Sidebar
+        <div className="sidebar-wrap" style={{ width: sidebarWidth }}>
+          <Sidebar
           workspace={workspace}
           selectedId={draft?.id ?? null}
           port={info?.port ?? 4731}
           onSelect={openRequest}
+          onSelectProject={switchProject}
+          onCreateProject={createProjectPrompt}
+          onRenameProject={renameProjectPrompt}
+          onDeleteProject={deleteProjectConfirm}
+          onFolderSettings={(collection, folder) => setFolderSettings({ collection, folder })}
           onCreateRequest={createRequestIn}
           onCreateCollection={() =>
             prompt('新建集合', '', async (value) => {
@@ -323,6 +528,9 @@ export default function App() {
               showToast(`集合「${value.trim()}」已创建`);
             }, '集合名称，比如「订单服务 v1」')
           }
+          onCreateFolder={createFolderIn}
+          onRenameFolder={renameFolderIn}
+          onDeleteFolder={deleteFolderIn}
           onDeleteRequest={async (id) => {
             if (!window.confirm('确定删除这个接口吗？此操作不可撤销。')) return;
             await window.api.deleteRequest(id);
@@ -352,19 +560,36 @@ export default function App() {
           }
           onExport={(collection) => setExportTarget(collection)}
           onOpenMcp={() => setDialog('mcp')}
+          />
+        </div>
+
+        <div
+          className="resizer-v"
+          onMouseDown={startResize('sidebar')}
+          title="拖动调整侧栏宽度"
         />
 
-        <main className="main">
+        <main className="main" ref={mainRef}>
           {draft ? (
             <>
+              <div className="editor-pane" style={{ height: editorHeight }}>
               <RequestEditor
                 draft={draft}
                 dirty={dirty}
                 sending={sending}
                 variables={variables}
+                folders={
+                  workspace?.collections.find((c) => c.id === draft.collectionId)?.folders ?? []
+                }
                 onChange={updateDraft}
                 onSend={send}
                 onSave={() => saveDraft()}
+              />
+              </div>
+              <div
+                className="resizer-h"
+                onMouseDown={startResize('editor')}
+                title="拖动调整请求/响应高度"
               />
               <ResponseView response={response} sending={sending} />
             </>
@@ -450,6 +675,31 @@ export default function App() {
           }
           onSave={async (format) => {
             await handleExport(exportTarget, format, true);
+          }}
+        />
+      )}
+
+      {folderSettings && (
+        <FolderVarsDialog
+          collectionName={folderSettings.collection.name}
+          folder={folderSettings.folder}
+          config={folderSettings.collection.folderVars?.find((f) => f.name === folderSettings.folder)}
+          requestCount={
+            workspace?.requests.filter(
+              (r) => r.collectionId === folderSettings.collection.id && r.folder === folderSettings.folder,
+            ).length ?? 0
+          }
+          onClose={() => setFolderSettings(null)}
+          onSave={async (vars, headers) => {
+            await window.api.setFolderConfig(
+              folderSettings.collection.id,
+              folderSettings.folder,
+              vars,
+              headers,
+            );
+            await reload();
+            setFolderSettings(null);
+            showToast('目录配置已保存');
           }}
         />
       )}

@@ -1,7 +1,15 @@
 import React from 'react';
-import { Collection, Environment, ExportFormat, ImportFormat, KeyValue, createKeyValue } from '../../shared/types';
+import {
+  Collection,
+  Environment,
+  ExportFormat,
+  FolderVars,
+  ImportFormat,
+  KeyValue,
+  createKeyValue,
+} from '../../shared/types';
 import type { AppInfo, ImportOutcome } from '../global';
-import { CopyButton, Icon } from './ui';
+import { CopyButton, Icon, Select } from './ui';
 
 export function Modal({
   title,
@@ -32,7 +40,11 @@ export function Modal({
         <div className="dialog-head">
           <div>
             <div className="dialog-title">{title}</div>
-            {subtitle && <div className="help" style={{ marginTop: 3 }}>{subtitle}</div>}
+            {subtitle && (
+              <div className="help" style={{ marginTop: 3 }}>
+                {subtitle}
+              </div>
+            )}
           </div>
           <button className="icon-btn" onClick={onClose} title="关闭">
             <Icon name="close" size={14} />
@@ -48,7 +60,7 @@ export function Modal({
 /* --------------------------------- import ---------------------------------- */
 
 const FORMAT_OPTIONS: { value: ImportFormat | 'auto'; label: string }[] = [
-  { value: 'auto', label: '自动识别' },
+  { value: 'auto', label: '自动识别格式' },
   { value: 'openapi', label: 'OpenAPI / Swagger' },
   { value: 'postman', label: 'Postman Collection' },
   { value: 'har', label: 'HAR' },
@@ -62,7 +74,12 @@ export function ImportDialog({
   onImportFile,
 }: {
   onClose: () => void;
-  onImport: (payload: { content: string; format?: ImportFormat; collectionName?: string; mode?: 'merge' | 'replace' }) => Promise<ImportOutcome>;
+  onImport: (payload: {
+    content: string;
+    format?: ImportFormat;
+    collectionName?: string;
+    mode?: 'merge' | 'replace';
+  }) => Promise<ImportOutcome>;
   onImportFile: () => Promise<ImportOutcome | null>;
 }) {
   const [mode, setMode] = React.useState<'paste' | 'file'>('paste');
@@ -114,7 +131,7 @@ export function ImportDialog({
   return (
     <Modal
       title="导入接口"
-      subtitle="支持 OpenAPI / Swagger、Postman、HAR、cURL，也可以直接用 MCP 让 agent 导入"
+      subtitle="支持 OpenAPI / Swagger、Postman、HAR、cURL，也可以让 agent 通过 MCP 导入"
       onClose={onClose}
       wide
       footer={
@@ -156,19 +173,13 @@ export function ImportDialog({
 
       {mode === 'paste' ? (
         <>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <select
-              className="select-input"
+          <div className="form-row">
+            <Select
               value={format}
-              onChange={(e) => setFormat(e.target.value as ImportFormat | 'auto')}
+              onChange={(value) => setFormat(value as ImportFormat | 'auto')}
+              options={FORMAT_OPTIONS}
               style={{ width: 190 }}
-            >
-              {FORMAT_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+            />
             <input
               className="text-input"
               style={{ flex: 1, minWidth: 180, fontFamily: 'inherit' }}
@@ -176,15 +187,16 @@ export function ImportDialog({
               value={collectionName}
               onChange={(e) => setCollectionName(e.target.value)}
             />
-            <select
-              className="select-input"
+            <Select
               value={mergeMode}
-              onChange={(e) => setMergeMode(e.target.value as 'merge' | 'replace')}
+              onChange={(value) => setMergeMode(value as 'merge' | 'replace')}
+              options={[
+                { value: 'merge', label: '追加并去重' },
+                { value: 'replace', label: '替换同集合' },
+              ]}
               style={{ width: 150 }}
-            >
-              <option value="merge">追加并去重</option>
-              <option value="replace">替换同集合</option>
-            </select>
+              align="right"
+            />
           </div>
           <textarea
             className="import-textarea"
@@ -219,7 +231,7 @@ export function ImportDialog({
       )}
 
       {error && (
-        <div className="result-box" style={{ color: '#f87171' }}>
+        <div className="result-box" style={{ color: 'var(--danger)' }}>
           {error}
         </div>
       )}
@@ -229,7 +241,7 @@ export function ImportDialog({
           已导入到集合 <b>{result.collection.name}</b>：新增 <b>{result.imported}</b> 个接口
           {result.skipped > 0 && `，跳过 ${result.skipped} 个重复接口`}
           {result.warnings.length > 0 && (
-            <div style={{ marginTop: 6, color: '#fbbf24' }}>{result.warnings.join('；')}</div>
+            <div style={{ marginTop: 6, color: 'var(--warning)' }}>{result.warnings.join('；')}</div>
           )}
         </div>
       )}
@@ -322,8 +334,8 @@ export function McpDialog({ info, onClose }: { info: AppInfo | null; onClose: ()
     {
       mcpServers: {
         apitools: {
-          command: 'node',
-          args: [serverPath],
+          command: serverPath,
+          args: [],
         },
       },
     },
@@ -343,7 +355,7 @@ export function McpDialog({ info, onClose }: { info: AppInfo | null; onClose: ()
       wide
       footer={
         <>
-          <span className="help">MCP 服务随应用一起分发，无需额外安装依赖</span>
+          <span className="help">MCP 服务由 Rust 编写，随应用分发，无需额外依赖</span>
           <span className="spacer" />
           <button className="chip-button" onClick={() => window.api.openDataDir()}>
             打开数据目录
@@ -369,6 +381,13 @@ export function McpDialog({ info, onClose }: { info: AppInfo | null; onClose: ()
         </div>
       </div>
       <div className="info-row">
+        <span className="label">MCP 可执行文件</span>
+        <div className="copy-field">
+          <span>{serverPath}</span>
+          <CopyButton value={serverPath} />
+        </div>
+      </div>
+      <div className="info-row">
         <span className="label">数据目录</span>
         <div className="copy-field">
           <span>{info.dataDir}</span>
@@ -383,24 +402,21 @@ export function McpDialog({ info, onClose }: { info: AppInfo | null; onClose: ()
         <pre className="import-textarea" style={{ minHeight: 130, margin: 0, overflow: 'auto' }}>
           {mcpConfig}
         </pre>
-        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+        <div className="form-row" style={{ marginTop: 8 }}>
           <button className="chip-button" onClick={() => navigator.clipboard.writeText(mcpConfig)}>
             <Icon name="copy" size={12} />
             复制 MCP 配置
           </button>
-          <button
-            className="chip-button"
-            onClick={() => navigator.clipboard.writeText(`node "${serverPath}"`)}
-          >
+          <button className="chip-button" onClick={() => navigator.clipboard.writeText(serverPath)}>
             <Icon name="terminal" size={12} />
-            复制启动命令
+            复制可执行文件路径
           </button>
         </div>
       </div>
 
       <div>
         <div className="field-label" style={{ marginBottom: 6 }}>
-          2. 直接调用 REST API（导入 / 导出 / 发送请求）
+          2. 或直接调用本地 REST API
         </div>
         <pre className="import-textarea" style={{ minHeight: 110, margin: 0, overflow: 'auto' }}>
           {curlExample}
@@ -410,7 +426,7 @@ export function McpDialog({ info, onClose }: { info: AppInfo | null; onClose: ()
       <div className="result-box">
         <b>MCP 工具一览</b>
         <div className="result-list">
-          <div>import_api_document — 粘贴/传入 OpenAPI、Postman、HAR、cURL 文本并入库</div>
+          <div>import_api_document — 传入 OpenAPI、Postman、HAR、cURL 文本并入库</div>
           <div>import_api_from_url — 从远程 URL 拉取接口文档并导入</div>
           <div>list_collections / list_requests / get_request — 浏览已有接口</div>
           <div>save_request / delete_request — 维护单个接口</div>
@@ -439,12 +455,11 @@ export function EnvDialog({
   onDelete: (id: string) => Promise<void>;
   onActivate: (id: string | null) => Promise<void>;
 }) {
-  const [selectedId, setSelectedId] = React.useState<string | null>(
-    activeId ?? environments[0]?.id ?? null,
-  );
+  const [selectedId, setSelectedId] = React.useState<string | null>(activeId ?? environments[0]?.id ?? null);
   const current = environments.find((e) => e.id === selectedId) ?? null;
   const [name, setName] = React.useState(current?.name ?? '');
   const [rows, setRows] = React.useState<KeyValue[]>(current?.variables ?? []);
+  const [copied, setCopied] = React.useState('');
 
   React.useEffect(() => {
     setName(current?.name ?? '');
@@ -455,11 +470,19 @@ export function EnvDialog({
     await onSave({ id: current?.id, name: name || '新环境', variables: rows });
   };
 
+  const copyVar = async (key: string) => {
+    if (!key) return;
+    await navigator.clipboard.writeText(`{{${key}}}`);
+    setCopied(key);
+    setTimeout(() => setCopied(''), 1500);
+  };
+
   return (
     <Modal
       title="环境变量"
-      subtitle="用 {{变量名}} 在 URL、请求头、请求体中引用"
+      subtitle="一次配置，多处引用：切换环境即可变更 baseUrl、token 等"
       onClose={onClose}
+      wide
       footer={
         <>
           <button className="chip-button" onClick={() => setSelectedId(null)}>
@@ -483,33 +506,42 @@ export function EnvDialog({
         </>
       }
     >
-      <div style={{ display: 'flex', gap: 8 }}>
-        <select
-          className="select-input"
+      <div className="result-box guide">
+        <b>怎么用</b>
+        <ol className="guide-list">
+          <li>
+            在下方添加变量，例如 <code>baseUrl = https://api.example.com</code>
+          </li>
+          <li>
+            请求里写 <code>{'{{baseUrl}}/users'}</code>（URL、请求头、请求体、鉴权字段都支持）
+          </li>
+          <li>保存后点「启用」，发送时自动替换；未定义的变量会在 URL 下方标红提示</li>
+        </ol>
+      </div>
+
+      <div className="form-row">
+        <Select
           value={selectedId ?? ''}
-          onChange={(e) => setSelectedId(e.target.value || null)}
+          onChange={(value) => setSelectedId(value || null)}
+          options={[
+            ...(selectedId ? [] : [{ value: '', label: '（新环境）' }]),
+            ...environments.map((env) => ({ value: env.id, label: env.name })),
+          ]}
           style={{ width: 200 }}
-        >
-          <option value="">（新环境）</option>
-          {environments.map((env) => (
-            <option key={env.id} value={env.id}>
-              {env.name}
-            </option>
-          ))}
-        </select>
+        />
         <input
           className="text-input"
           style={{ flex: 1, fontFamily: 'inherit' }}
-          placeholder="环境名称"
+          placeholder="环境名称，例如「测试环境」"
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
         <button
-          className="chip-button"
+          className={`chip-button ${activeId === current?.id && current ? 'primary' : ''}`}
           onClick={() => current && onActivate(activeId === current.id ? null : current.id)}
           disabled={!current}
         >
-          {activeId === current?.id ? '取消启用' : '启用'}
+          {activeId === current?.id ? '已启用 · 点击停用' : '启用此环境'}
         </button>
       </div>
 
@@ -517,8 +549,9 @@ export function EnvDialog({
         <thead>
           <tr>
             <th style={{ width: 34 }} />
-            <th style={{ width: '35%' }}>变量名</th>
+            <th style={{ width: '32%' }}>变量名</th>
             <th>值</th>
+            <th style={{ width: 34 }} title="复制 {{变量}}" />
             <th style={{ width: 32 }} />
           </tr>
         </thead>
@@ -526,7 +559,7 @@ export function EnvDialog({
           {[...rows, createKeyValue('', '')].map((row, index) => {
             const isNew = index >= rows.length;
             return (
-              <tr key={row.id}>
+              <tr key={row.id} className={isNew ? 'virtual-row' : ''}>
                 <td className="check">
                   <input
                     type="checkbox"
@@ -560,6 +593,17 @@ export function EnvDialog({
                   />
                 </td>
                 <td className="del">
+                  {!isNew && row.key && (
+                    <button
+                      className="icon-btn"
+                      title={`复制 {{${row.key}}}`}
+                      onClick={() => copyVar(row.key)}
+                    >
+                      <Icon name={copied === row.key ? 'check' : 'copy'} size={12} />
+                    </button>
+                  )}
+                </td>
+                <td className="del">
                   {!isNew && (
                     <button
                       className="icon-btn danger"
@@ -574,6 +618,169 @@ export function EnvDialog({
           })}
         </tbody>
       </table>
+      <p className="help">
+        提示：启用某个环境后，顶栏「环境」按钮会显示该环境名称。切换环境不会修改请求本身，只改变变量取值。
+      </p>
+    </Modal>
+  );
+}
+
+/* ------------------------------- folder vars ------------------------------- */
+
+function SimpleKVTable({
+  items,
+  onChange,
+  keyPlaceholder,
+  valuePlaceholder,
+}: {
+  items: KeyValue[];
+  onChange: (items: KeyValue[]) => void;
+  keyPlaceholder: string;
+  valuePlaceholder: string;
+}) {
+  const rows = [...items, createKeyValue('', '')];
+  const update = (index: number, patch: Partial<KeyValue>) => {
+    if (index >= items.length) {
+      onChange([...items, { ...createKeyValue('', ''), ...patch }]);
+      return;
+    }
+    onChange(items.map((item, i) => (i === index ? { ...item, ...patch } : item)));
+  };
+
+  return (
+    <table className="kv-table">
+      <thead>
+        <tr>
+          <th style={{ width: 34 }} />
+          <th style={{ width: '34%' }}>{keyPlaceholder}</th>
+          <th>{valuePlaceholder}</th>
+          <th style={{ width: 32 }} />
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row, index) => {
+          const isNew = index >= items.length;
+          return (
+            <tr key={row.id} className={isNew ? 'virtual-row' : ''}>
+              <td className="check">
+                <input
+                  type="checkbox"
+                  checked={isNew ? false : row.enabled}
+                  disabled={isNew}
+                  onChange={(e) => update(index, { enabled: e.target.checked })}
+                />
+              </td>
+              <td>
+                <input
+                  type="text"
+                  value={row.key}
+                  placeholder={isNew ? keyPlaceholder : ''}
+                  onChange={(e) => update(index, { key: e.target.value })}
+                />
+              </td>
+              <td>
+                <input
+                  type="text"
+                  value={row.value}
+                  placeholder={isNew ? valuePlaceholder : ''}
+                  onChange={(e) => update(index, { value: e.target.value })}
+                />
+              </td>
+              <td className="del">
+                {!isNew && (
+                  <button className="icon-btn danger" onClick={() => onChange(items.filter((_, i) => i !== index))}>
+                    <Icon name="close" size={11} />
+                  </button>
+                )}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+export function FolderVarsDialog({
+  collectionName,
+  folder,
+  config,
+  requestCount,
+  onClose,
+  onSave,
+}: {
+  collectionName: string;
+  folder: string;
+  config: FolderVars | undefined;
+  requestCount: number;
+  onClose: () => void;
+  onSave: (variables: KeyValue[], headers: KeyValue[]) => Promise<void>;
+}) {
+  const [variables, setVariables] = React.useState<KeyValue[]>(config?.variables ?? []);
+  const [headers, setHeaders] = React.useState<KeyValue[]>(config?.headers ?? []);
+  const [busy, setBusy] = React.useState(false);
+
+  return (
+    <Modal
+      title={`目录设置 · ${folder}`}
+      subtitle={`${collectionName} / ${folder} · ${requestCount} 个接口`}
+      onClose={onClose}
+      wide
+      footer={
+        <>
+          <span className="help">保存后，该目录下所有接口自动继承</span>
+          <span className="spacer" />
+          <button className="chip-button" onClick={onClose}>
+            取消
+          </button>
+          <button
+            className="chip-button primary"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await onSave(variables, headers);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            保存
+          </button>
+        </>
+      }
+    >
+      <div className="result-box guide">
+        <b>目录级配置</b>
+        <div className="guide-list" style={{ paddingLeft: 0, listStyle: 'none' }}>
+          · 变量：目录内请求可以用 <code>{'{{baseUrl}}'}</code>、<code>{'{{token}}'}</code>，未定义时回退到环境变量
+          <br />· 公共请求头：目录内所有请求发送时自动带上，请求里同名 Header 优先
+        </div>
+      </div>
+
+      <div>
+        <div className="field-label" style={{ marginBottom: 6 }}>
+          目录变量
+        </div>
+        <SimpleKVTable
+          items={variables}
+          onChange={setVariables}
+          keyPlaceholder="变量名，例如 baseUrl"
+          valuePlaceholder="值，例如 https://api.example.com"
+        />
+      </div>
+
+      <div>
+        <div className="field-label" style={{ marginBottom: 6 }}>
+          公共请求头
+        </div>
+        <SimpleKVTable
+          items={headers}
+          onChange={setHeaders}
+          keyPlaceholder="Header，例如 Authorization"
+          valuePlaceholder="值，例如 Bearer {{token}}"
+        />
+      </div>
     </Modal>
   );
 }

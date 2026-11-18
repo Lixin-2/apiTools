@@ -7,14 +7,16 @@ import {
   KeyValue,
   createKeyValue,
 } from '../../shared/types';
-import { splitUrlToParams } from '../../shared/url';
-import { Icon, METHOD_COLORS, MethodTag } from './ui';
+import { splitUrlToParams, substituteVars } from '../../shared/url';
+import { Icon, METHOD_COLORS, MethodTag, Select } from './ui';
+import VarInput from './VarInput';
 
 interface Props {
   draft: ApiRequest;
   dirty: boolean;
   sending: boolean;
   variables: KeyValue[];
+  folders: string[];
   onChange: (patch: Partial<ApiRequest>) => void;
   onSend: () => void;
   onSave: () => void;
@@ -23,7 +25,7 @@ interface Props {
 type TabKey = 'params' | 'body' | 'headers' | 'auth' | 'docs';
 
 const BODY_TYPES: { key: BodyType; label: string }[] = [
-  { key: 'none', label: 'None' },
+  { key: 'none', label: '无' },
   { key: 'json', label: 'JSON' },
   { key: 'text', label: 'Text' },
   { key: 'form', label: 'Form' },
@@ -33,11 +35,13 @@ const BODY_TYPES: { key: BodyType; label: string }[] = [
 function KeyValueEditor({
   items,
   onChange,
+  variables,
   keyPlaceholder = 'Key',
   valuePlaceholder = 'Value',
 }: {
   items: KeyValue[];
   onChange: (items: KeyValue[]) => void;
+  variables: KeyValue[];
   keyPlaceholder?: string;
   valuePlaceholder?: string;
 }) {
@@ -80,21 +84,19 @@ function KeyValueEditor({
                   />
                 </td>
                 <td>
-                  <input
-                    type="text"
+                  <VarInput
                     value={row.key}
+                    variables={variables}
                     placeholder={index === items.length ? keyPlaceholder : ''}
-                    spellCheck={false}
-                    onChange={(e) => update(index, { key: e.target.value })}
+                    onChange={(value) => update(index, { key: value })}
                   />
                 </td>
                 <td>
-                  <input
-                    type="text"
+                  <VarInput
                     value={row.value}
+                    variables={variables}
                     placeholder={index === items.length ? valuePlaceholder : ''}
-                    spellCheck={false}
-                    onChange={(e) => update(index, { value: e.target.value })}
+                    onChange={(value) => update(index, { value })}
                   />
                 </td>
                 <td className="del">
@@ -114,10 +116,7 @@ function KeyValueEditor({
         </tbody>
       </table>
       <div className="add-row">
-        <button
-          className="chip-button ghost"
-          onClick={() => onChange([...items, createKeyValue('', '')])}
-        >
+        <button className="chip-button ghost" onClick={() => onChange([...items, createKeyValue('', '')])}>
           <Icon name="plus" size={12} />
           添加一行
         </button>
@@ -126,13 +125,38 @@ function KeyValueEditor({
   );
 }
 
-export default function RequestEditor({ draft, dirty, sending, variables, onChange, onSend, onSave }: Props) {
+export default function RequestEditor({
+  draft,
+  dirty,
+  sending,
+  variables,
+  folders,
+  onChange,
+  onSend,
+  onSave,
+}: Props) {
   const [tab, setTab] = React.useState<TabKey>('params');
   const [showVars, setShowVars] = React.useState(false);
 
   const activeParams = draft.params.filter((p) => p.enabled && p.key).length;
   const activeHeaders = draft.headers.filter((h) => h.enabled && h.key).length;
-  const methodColor = METHOD_COLORS[draft.method] ?? '#9a9aab';
+  const methodColor = METHOD_COLORS[draft.method] ?? 'var(--text-dim)';
+
+  const varMap = React.useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const variable of variables) {
+      if (variable.enabled && variable.key) map[variable.key] = variable.value;
+    }
+    return map;
+  }, [variables]);
+
+  const usedVars = React.useMemo(() => {
+    const found = [...draft.url.matchAll(/\{\{\s*([\w.-]+)\s*\}\}/g)].map((m) => m[1]);
+    return [...new Set(found)];
+  }, [draft.url]);
+
+  const missingVars = usedVars.filter((name) => !(name in varMap));
+  const resolvedUrl = substituteVars(draft.url, varMap);
 
   const onUrlChange = (value: string) => {
     if (value.includes('?')) {
@@ -152,68 +176,82 @@ export default function RequestEditor({ draft, dirty, sending, variables, onChan
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: '0 0 auto' }}>
+    <div className="editor-shell">
       <div className="request-bar">
-        <div className="method-select" style={{ color: methodColor }}>
-          <select
-            value={draft.method}
-            onChange={(e) => onChange({ method: e.target.value as HttpMethod })}
-            style={{ color: methodColor }}
-          >
-            {HTTP_METHODS.map((m) => (
-              <option key={m} value={m} style={{ color: METHOD_COLORS[m] }}>
-                {m}
-              </option>
-            ))}
-          </select>
-        </div>
+        <Select
+          value={draft.method}
+          onChange={(value) => onChange({ method: value as HttpMethod })}
+          options={HTTP_METHODS.map((m) => ({ value: m, label: m, color: METHOD_COLORS[m] }))}
+          color={methodColor}
+          className="method-picker"
+          menuWidth={132}
+        />
         <div className="url-input-wrap">
-          <input
+          <VarInput
             value={draft.url}
-            onChange={(e) => onUrlChange(e.target.value)}
+            onChange={onUrlChange}
+            variables={variables}
             placeholder="https://api.example.com/v1/users 或 {{baseUrl}}/users"
-            spellCheck={false}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) onSend();
             }}
           />
-          {draft.url.includes('{{') && (
-            <button
-              className="icon-btn"
-              title="查看变量"
-              onClick={() => setShowVars((v) => !v)}
-            >
-              <Icon name="spark" size={13} />
-            </button>
-          )}
+          <button
+            className={`var-trigger ${usedVars.length ? 'has-vars' : ''}`}
+            title="查看环境变量"
+            onClick={() => setShowVars((v) => !v)}
+          >
+            <Icon name="key" size={12} />
+            {usedVars.length > 0 && <span>{usedVars.length}</span>}
+          </button>
         </div>
         <button className="send-btn" onClick={onSend} disabled={sending || !draft.url}>
           {sending ? <span className="spinner" /> : <Icon name="send" size={13} />}
           {sending ? '发送中' : '发送'}
         </button>
-        <button className={`save-btn ${dirty ? 'dirty' : ''}`} onClick={onSave} title="⌘S">
+        <button className={`save-btn ${dirty ? 'dirty' : ''}`} onClick={onSave} title="保存（⌘S）">
           <Icon name="check" size={13} />
         </button>
       </div>
 
-      {showVars && draft.url.includes('{{') && (
-        <div style={{ padding: '0 16px 8px' }}>
-          <div className="result-box">
-            <b>可用变量</b>（在「环境变量」中维护）
-            <div className="result-list">
-              {variables.filter((v) => v.enabled && v.key).length ? (
-                variables
-                  .filter((v) => v.enabled && v.key)
-                  .map((v) => (
-                    <div key={v.id}>
-                      {`{{${v.key}}} = ${v.value}`}
-                    </div>
-                  ))
-              ) : (
-                <div style={{ color: 'var(--text-faint)' }}>尚未配置环境变量</div>
-              )}
-            </div>
+      {usedVars.length > 0 && (
+        <div className={`url-hint ${missingVars.length ? 'warn' : ''}`}>
+          <Icon name={missingVars.length ? 'info' : 'check'} size={12} />
+          {missingVars.length ? (
+            <span>
+              变量未定义：{missingVars.map((name) => `{{${name}}}`).join('、')} —— 请到右上角「环境」里添加
+            </span>
+          ) : (
+            <span>
+              发送时解析为 <code>{resolvedUrl}</code>
+            </span>
+          )}
+        </div>
+      )}
+
+      {showVars && (
+        <div className="var-popover">
+          <div className="var-popover-head">
+            <span>环境变量</span>
+            <span className="help">点击复制 {'{{变量}}'}</span>
           </div>
+          {variables.filter((v) => v.enabled && v.key).length ? (
+            variables
+              .filter((v) => v.enabled && v.key)
+              .map((variable) => (
+                <button
+                  key={variable.id}
+                  className="var-item"
+                  onClick={() => navigator.clipboard.writeText(`{{${variable.key}}}`)}
+                >
+                  <code>{`{{${variable.key}}}`}</code>
+                  <span>{variable.value || '（空）'}</span>
+                  <Icon name="copy" size={11} />
+                </button>
+              ))
+          ) : (
+            <div className="var-empty">尚未配置环境变量，点击右上角「环境」添加</div>
+          )}
         </div>
       )}
 
@@ -222,17 +260,26 @@ export default function RequestEditor({ draft, dirty, sending, variables, onChan
           className="name-input"
           value={draft.name}
           onChange={(e) => onChange({ name: e.target.value })}
+          placeholder="请求名称"
           spellCheck={false}
         />
         <MethodTag method={draft.method} />
-        {dirty && <span style={{ color: 'var(--text-faint)', fontSize: 11.5 }}>未保存</span>}
+        {dirty && <span className="meta-dirty">未保存</span>}
         <span style={{ flex: 1 }} />
-        <input
-          className="text-input"
-          style={{ width: 150, height: 26, fontSize: 11.5 }}
+        <span className="meta-label">目录</span>
+        <Select
           value={draft.folder}
-          placeholder="分组 / 文件夹"
-          onChange={(e) => onChange({ folder: e.target.value })}
+          onChange={(value) => onChange({ folder: value })}
+          options={[
+            { value: '', label: '集合根级' },
+            ...folders.map((folder) => ({ value: folder, label: folder })),
+            ...(draft.folder && !folders.includes(draft.folder)
+              ? [{ value: draft.folder, label: `${draft.folder}（自定义）` }]
+              : []),
+          ]}
+          size="sm"
+          style={{ width: 170 }}
+          menuWidth={190}
         />
       </div>
 
@@ -257,6 +304,7 @@ export default function RequestEditor({ draft, dirty, sending, variables, onChan
         {tab === 'params' && (
           <KeyValueEditor
             items={draft.params}
+            variables={variables}
             onChange={(params) => onChange({ params })}
             keyPlaceholder="参数名"
             valuePlaceholder="参数值"
@@ -267,6 +315,7 @@ export default function RequestEditor({ draft, dirty, sending, variables, onChan
           <>
             <KeyValueEditor
               items={draft.headers}
+              variables={variables}
               onChange={(headers) => onChange({ headers })}
               keyPlaceholder="Header"
               valuePlaceholder="值"
@@ -301,10 +350,12 @@ export default function RequestEditor({ draft, dirty, sending, variables, onChan
             {draft.bodyType === 'none' ? (
               <p className="help">该请求不携带请求体。</p>
             ) : (
-              <textarea
+              <VarInput
+                multiline
                 className="code-area"
                 value={draft.body}
-                onChange={(e) => onChange({ body: e.target.value })}
+                variables={variables}
+                onChange={(body) => onChange({ body })}
                 placeholder={
                   draft.bodyType === 'json'
                     ? '{\n  "name": "value"\n}'
@@ -312,7 +363,6 @@ export default function RequestEditor({ draft, dirty, sending, variables, onChan
                       ? 'key1=value1&key2=value2'
                       : '请求体内容'
                 }
-                spellCheck={false}
               />
             )}
           </div>
@@ -321,27 +371,27 @@ export default function RequestEditor({ draft, dirty, sending, variables, onChan
         {tab === 'auth' && (
           <div className="auth-grid">
             <span className="field-label">类型</span>
-            <select
-              className="select-input"
+            <Select
               value={draft.auth.type}
-              onChange={(e) => onChange({ auth: { ...draft.auth, type: e.target.value as any } })}
-              style={{ width: 200 }}
-            >
-              <option value="none">无</option>
-              <option value="bearer">Bearer Token</option>
-              <option value="basic">Basic Auth</option>
-              <option value="apikey">API Key</option>
-            </select>
+              onChange={(value) => onChange({ auth: { ...draft.auth, type: value as any } })}
+              options={[
+                { value: 'none', label: '无' },
+                { value: 'bearer', label: 'Bearer Token' },
+                { value: 'basic', label: 'Basic Auth' },
+                { value: 'apikey', label: 'API Key' },
+              ]}
+              style={{ width: 220 }}
+            />
 
             {draft.auth.type === 'bearer' && (
               <>
                 <span className="field-label">Token</span>
-                <input
+                <VarInput
                   className="text-input"
                   value={draft.auth.token ?? ''}
-                  onChange={(e) => onChange({ auth: { ...draft.auth, token: e.target.value } })}
-                  placeholder="{{token}}"
-                  spellCheck={false}
+                  variables={variables}
+                  onChange={(token) => onChange({ auth: { ...draft.auth, token } })}
+                  placeholder="{{token}} 或直接填入 token"
                 />
                 <span />
                 <span className="help">发送时自动附加 Authorization: Bearer &lt;token&gt;</span>
@@ -355,6 +405,7 @@ export default function RequestEditor({ draft, dirty, sending, variables, onChan
                   className="text-input"
                   value={draft.auth.username ?? ''}
                   onChange={(e) => onChange({ auth: { ...draft.auth, username: e.target.value } })}
+                  placeholder="用户名"
                   spellCheck={false}
                 />
                 <span className="field-label">密码</span>
@@ -363,6 +414,7 @@ export default function RequestEditor({ draft, dirty, sending, variables, onChan
                   type="password"
                   value={draft.auth.password ?? ''}
                   onChange={(e) => onChange({ auth: { ...draft.auth, password: e.target.value } })}
+                  placeholder="密码"
                 />
               </>
             )}
@@ -374,25 +426,27 @@ export default function RequestEditor({ draft, dirty, sending, variables, onChan
                   className="text-input"
                   value={draft.auth.key ?? ''}
                   onChange={(e) => onChange({ auth: { ...draft.auth, key: e.target.value } })}
+                  placeholder="例如 X-API-Key"
                   spellCheck={false}
                 />
                 <span className="field-label">Value</span>
-                <input
+                <VarInput
                   className="text-input"
                   value={draft.auth.value ?? ''}
-                  onChange={(e) => onChange({ auth: { ...draft.auth, value: e.target.value } })}
-                  spellCheck={false}
+                  variables={variables}
+                  onChange={(value) => onChange({ auth: { ...draft.auth, value } })}
+                  placeholder="值或 {{变量}}"
                 />
                 <span className="field-label">添加到</span>
-                <select
-                  className="select-input"
+                <Select
                   value={draft.auth.addTo ?? 'header'}
-                  onChange={(e) => onChange({ auth: { ...draft.auth, addTo: e.target.value as any } })}
-                  style={{ width: 160 }}
-                >
-                  <option value="header">请求头</option>
-                  <option value="query">查询参数</option>
-                </select>
+                  onChange={(value) => onChange({ auth: { ...draft.auth, addTo: value as any } })}
+                  options={[
+                    { value: 'header', label: '请求头' },
+                    { value: 'query', label: '查询参数' },
+                  ]}
+                  style={{ width: 180 }}
+                />
               </>
             )}
           </div>

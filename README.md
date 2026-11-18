@@ -6,9 +6,13 @@
 
 ## 功能
 
+- **多项目管理**：按项目隔离集合、接口与环境，侧栏顶部一键切换
 - **请求调试**：GET / POST / PUT / PATCH / DELETE / HEAD / OPTIONS；参数、请求头、请求体（JSON / Text / Form / URL Encoded）；Bearer / Basic / API Key 鉴权
-- **集合与分组**：集合、文件夹、搜索、重命名、删除
-- **环境变量**：`{{变量}}` 在 URL、请求头、请求体、鉴权字段中自动替换（导入相对 `servers` 的 OpenAPI 时会自动生成 `{{baseUrl}}`）
+- **集合与目录**：集合 → 目录 → 接口；目录支持空目录、重命名、删除（删除目录时接口回到根级）
+- **目录级配置**：给目录配置变量与公共请求头，目录内接口自动继承（请求内同名 Header 优先）
+- **变量补全**：在 URL / 参数 / 请求头 / 请求体 / 鉴权字段输入 `{{` 即可弹出候选，↑↓ 选择、Enter 插入
+- **环境变量**：`{{变量}}` 实时预览解析结果，未定义变量会高亮提示（导入相对 `servers` 的 OpenAPI 时自动生成 `{{baseUrl}}`）
+- **主题与布局**：夜间 / 浅色模式切换；侧栏宽度、请求/响应分栏高度均可拖动，选择会记住
 - **导入**：OpenAPI 3 / Swagger 2、Postman Collection v2.1、HAR、cURL、apiTools JSON（自动识别格式）
 - **导出**：Postman Collection v2.1、OpenAPI 3.0、apiTools JSON（可复制或保存文件）
 - **MCP**：agent 通过 MCP 工具导入接口、查询集合、导出文档、直接发请求验证
@@ -49,7 +53,7 @@ src-tauri/
 ## 数据位置
 
 ```
-~/Library/Application Support/apiTools/workspace.json   # 集合、接口、环境
+~/Library/Application Support/apiTools/workspace.json   # 项目、集合、目录、接口、环境与变量
 ~/Library/Application Support/apiTools/api-token        # 本地 REST API Token
 ```
 

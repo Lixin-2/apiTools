@@ -79,22 +79,66 @@ fn acquire_lock() -> Result<LockGuard, String> {
     }
 }
 
-/* --------------------------------- workspace -------------------------------- */
+/* --------------------------------- storage --------------------------------- */
 
-pub fn read_workspace() -> Workspace {
-    let file = data_file();
-    let Ok(raw) = fs::read_to_string(&file) else {
-        return Workspace::default();
-    };
-    if raw.trim().is_empty() {
-        return Workspace::default();
+fn normalize_stored(mut stored: StoredWorkspace) -> StoredWorkspace {
+    if stored.projects.is_empty() {
+        let project = Project::new("默认项目", "");
+        stored.active_project_id = Some(project.id.clone());
+        stored.projects.push(project);
     }
-    serde_json::from_str(&raw).unwrap_or_default()
+    let valid = stored
+        .active_project_id
+        .as_ref()
+        .map(|id| stored.projects.iter().any(|p| &p.id == id))
+        .unwrap_or(false);
+    if !valid {
+        stored.active_project_id = stored.projects.first().map(|p| p.id.clone());
+    }
+    stored.version = 2;
+    stored
 }
 
-pub fn write_workspace(ws: &Workspace) -> Result<Workspace, String> {
-    let mut next = ws.clone();
+/// 读取落盘结构，自动把 v1（单工作区）迁移成「默认项目」
+pub fn read_stored() -> StoredWorkspace {
+    let Ok(raw) = fs::read_to_string(data_file()) else {
+        return normalize_stored(StoredWorkspace::default());
+    };
+    if raw.trim().is_empty() {
+        return normalize_stored(StoredWorkspace::default());
+    }
+    let Ok(value) = serde_json::from_str::<Value>(&raw) else {
+        return normalize_stored(StoredWorkspace::default());
+    };
+    if value.get("projects").is_some() {
+        let stored: StoredWorkspace = serde_json::from_value(value).unwrap_or_default();
+        normalize_stored(stored)
+    } else {
+        let legacy: Workspace = serde_json::from_value(value).unwrap_or_default();
+        let project = Project {
+            id: new_id("prj"),
+            name: "默认项目".to_string(),
+            description: String::new(),
+            collections: legacy.collections,
+            requests: legacy.requests,
+            environments: legacy.environments,
+            active_environment_id: legacy.active_environment_id,
+            created_at: now_ms(),
+            updated_at: now_ms(),
+        };
+        normalize_stored(StoredWorkspace {
+            version: 2,
+            projects: vec![project],
+            active_project_id: None,
+            updated_at: now_ms(),
+        })
+    }
+}
+
+fn write_stored(stored: &StoredWorkspace) -> Result<(), String> {
+    let mut next = stored.clone();
     next.updated_at = now_ms();
+    next.version = 2;
     fs::create_dir_all(data_dir()).map_err(|e| format!("创建数据目录失败: {e}"))?;
     let target = data_file();
     let tmp = data_dir().join(format!(
@@ -105,39 +149,162 @@ pub fn write_workspace(ws: &Workspace) -> Result<Workspace, String> {
     let text = serde_json::to_string_pretty(&next).map_err(|e| format!("序列化失败: {e}"))?;
     fs::write(&tmp, text).map_err(|e| format!("写入失败: {e}"))?;
     fs::rename(&tmp, &target).map_err(|e| format!("重命名失败: {e}"))?;
-    Ok(next)
+    Ok(())
 }
 
-pub fn mutate<T>(f: impl FnOnce(&mut Workspace) -> T) -> Result<T, String> {
-    let _guard = acquire_lock()?;
-    let mut ws = read_workspace();
-    let out = f(&mut ws);
-    write_workspace(&ws)?;
-    Ok(out)
-}
-
-pub fn ensure_collection(ws: &mut Workspace, name: &str) -> Collection {
-    if let Some(found) = ws.collections.iter().find(|c| c.name == name) {
-        return found.clone();
+fn active_index(stored: &StoredWorkspace) -> usize {
+    if let Some(id) = &stored.active_project_id {
+        if let Some(index) = stored.projects.iter().position(|p| &p.id == id) {
+            return index;
+        }
     }
-    let collection = Collection::new(name, "");
-    ws.collections.push(collection.clone());
-    collection
+    0
+}
+
+/// 在当前项目上执行修改并落盘
+pub fn mutate<T>(f: impl FnOnce(&mut Project) -> T) -> Result<T, String> {
+    let _guard = acquire_lock()?;
+    let mut stored = read_stored();
+    let index = active_index(&stored);
+    let output = {
+        let project = &mut stored.projects[index];
+        let result = f(project);
+        project.updated_at = now_ms();
+        result
+    };
+    write_stored(&stored)?;
+    Ok(output)
+}
+
+/// 前端视图：项目列表 + 当前项目内容
+pub fn snapshot() -> Workspace {
+    let stored = read_stored();
+    let index = active_index(&stored);
+    let project = &stored.projects[index];
+    Workspace {
+        version: 2,
+        projects: stored
+            .projects
+            .iter()
+            .map(|p| ProjectSummary {
+                id: p.id.clone(),
+                name: p.name.clone(),
+                description: p.description.clone(),
+                collection_count: p.collections.len(),
+                request_count: p.requests.len(),
+                created_at: p.created_at,
+                updated_at: p.updated_at,
+            })
+            .collect(),
+        active_project_id: Some(project.id.clone()),
+        collections: project.collections.clone(),
+        requests: project.requests.clone(),
+        environments: project.environments.clone(),
+        active_environment_id: project.active_environment_id.clone(),
+        updated_at: stored.updated_at,
+    }
+}
+
+/// 兼容旧调用：等同于当前项目视图
+pub fn read_workspace() -> Workspace {
+    snapshot()
+}
+
+/* --------------------------------- projects -------------------------------- */
+
+pub fn create_project(name: &str, description: &str) -> Result<ProjectSummary, String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("项目名称不能为空".to_string());
+    }
+    let _guard = acquire_lock()?;
+    let mut stored = read_stored();
+    let project = Project::new(name, description);
+    let summary = ProjectSummary {
+        id: project.id.clone(),
+        name: project.name.clone(),
+        description: project.description.clone(),
+        collection_count: 0,
+        request_count: 0,
+        created_at: project.created_at,
+        updated_at: project.updated_at,
+    };
+    stored.projects.push(project);
+    stored.active_project_id = Some(summary.id.clone());
+    write_stored(&stored)?;
+    Ok(summary)
+}
+
+pub fn rename_project(id: &str, name: &str, description: Option<String>) -> Result<(), String> {
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return Err("项目名称不能为空".to_string());
+    }
+    let _guard = acquire_lock()?;
+    let mut stored = read_stored();
+    if let Some(project) = stored.projects.iter_mut().find(|p| p.id == id) {
+        project.name = name;
+        if let Some(description) = description {
+            project.description = description;
+        }
+        project.updated_at = now_ms();
+    }
+    write_stored(&stored)?;
+    Ok(())
+}
+
+pub fn delete_project(id: &str) -> Result<bool, String> {
+    let _guard = acquire_lock()?;
+    let mut stored = read_stored();
+    if stored.projects.len() <= 1 {
+        return Err("至少保留一个项目".to_string());
+    }
+    let before = stored.projects.len();
+    stored.projects.retain(|p| p.id != id);
+    if stored.active_project_id.as_deref() == Some(id) {
+        stored.active_project_id = stored.projects.first().map(|p| p.id.clone());
+    }
+    write_stored(&stored)?;
+    Ok(stored.projects.len() < before)
+}
+
+pub fn set_active_project(id: &str) -> Result<(), String> {
+    let _guard = acquire_lock()?;
+    let mut stored = read_stored();
+    if !stored.projects.iter().any(|p| p.id == id) {
+        return Err("项目不存在".to_string());
+    }
+    stored.active_project_id = Some(id.to_string());
+    write_stored(&stored)?;
+    Ok(())
 }
 
 /* ------------------------------- collections ------------------------------- */
 
+fn ensure_collection(project: &mut Project, name: &str) -> Collection {
+    if let Some(found) = project.collections.iter().find(|c| c.name == name) {
+        return found.clone();
+    }
+    let collection = Collection::new(name, "");
+    project.collections.push(collection.clone());
+    collection
+}
+
 pub fn create_collection(name: &str, description: &str) -> Result<Collection, String> {
-    mutate(|ws| {
+    mutate(|project| {
         let collection = Collection::new(name, description);
-        ws.collections.push(collection.clone());
+        project.collections.push(collection.clone());
         collection
     })
 }
 
-pub fn update_collection(id: &str, name: Option<String>, description: Option<String>) -> Result<Option<Collection>, String> {
-    mutate(|ws| {
-        let Some(col) = ws.collections.iter_mut().find(|c| c.id == id) else {
+pub fn update_collection(
+    id: &str,
+    name: Option<String>,
+    description: Option<String>,
+) -> Result<Option<Collection>, String> {
+    mutate(|project| {
+        let Some(col) = project.collections.iter_mut().find(|c| c.id == id) else {
             return None;
         };
         if let Some(name) = name {
@@ -152,12 +319,125 @@ pub fn update_collection(id: &str, name: Option<String>, description: Option<Str
 }
 
 pub fn delete_collection(id: &str) -> Result<bool, String> {
-    mutate(|ws| {
-        let before = ws.collections.len();
-        ws.collections.retain(|c| c.id != id);
-        ws.requests.retain(|r| r.collection_id != id);
-        ws.collections.len() < before
+    mutate(|project| {
+        let before = project.collections.len();
+        project.collections.retain(|c| c.id != id);
+        project.requests.retain(|r| r.collection_id != id);
+        project.collections.len() < before
     })
+}
+
+/* ---------------------------------- folders -------------------------------- */
+
+pub fn create_folder(collection_id: &str, name: &str) -> Result<Vec<String>, String> {
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return Err("目录名不能为空".to_string());
+    }
+    mutate(|project| match project.collections.iter_mut().find(|c| c.id == collection_id) {
+        Some(col) => {
+            if !col.folders.contains(&name) {
+                col.folders.push(name.clone());
+            }
+            col.updated_at = now_ms();
+            Ok(col.folders.clone())
+        }
+        None => Err("集合不存在".to_string()),
+    })?
+}
+
+pub fn rename_folder(
+    collection_id: &str,
+    old_name: &str,
+    new_name: &str,
+) -> Result<Vec<String>, String> {
+    let new_name = new_name.trim().to_string();
+    if new_name.is_empty() {
+        return Err("目录名不能为空".to_string());
+    }
+    mutate(|project| match project.collections.iter_mut().find(|c| c.id == collection_id) {
+        Some(col) => {
+            for folder in col.folders.iter_mut() {
+                if folder == old_name {
+                    *folder = new_name.clone();
+                }
+            }
+            for config in col.folder_vars.iter_mut() {
+                if config.name == old_name {
+                    config.name = new_name.clone();
+                }
+            }
+            col.updated_at = now_ms();
+            let folders = col.folders.clone();
+            for request in project.requests.iter_mut() {
+                if request.collection_id == collection_id && request.folder == old_name {
+                    request.folder = new_name.clone();
+                }
+            }
+            Ok(folders)
+        }
+        None => Err("集合不存在".to_string()),
+    })?
+}
+
+pub fn delete_folder(collection_id: &str, name: &str) -> Result<Vec<String>, String> {
+    mutate(|project| match project.collections.iter_mut().find(|c| c.id == collection_id) {
+        Some(col) => {
+            col.folders.retain(|folder| folder != name);
+            col.folder_vars.retain(|config| config.name != name);
+            col.updated_at = now_ms();
+            let folders = col.folders.clone();
+            for request in project.requests.iter_mut() {
+                if request.collection_id == collection_id && request.folder == name {
+                    request.folder.clear();
+                }
+            }
+            Ok(folders)
+        }
+        None => Err("集合不存在".to_string()),
+    })?
+}
+
+/// 保存目录级变量 / 公共请求头
+pub fn set_folder_config(
+    collection_id: &str,
+    name: &str,
+    variables: Vec<KeyValue>,
+    headers: Vec<KeyValue>,
+) -> Result<FolderVars, String> {
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return Err("目录不存在".to_string());
+    }
+    mutate(|project| match project.collections.iter_mut().find(|c| c.id == collection_id) {
+        Some(col) => {
+            if !col.folders.contains(&name) {
+                col.folders.push(name.clone());
+            }
+            let config = FolderVars {
+                name: name.clone(),
+                variables,
+                headers,
+            };
+            if let Some(existing) = col.folder_vars.iter_mut().find(|c| c.name == name) {
+                *existing = config.clone();
+            } else {
+                col.folder_vars.push(config.clone());
+            }
+            col.updated_at = now_ms();
+            Ok(config)
+        }
+        None => Err("集合不存在".to_string()),
+    })?
+}
+
+pub fn folder_configs(collection_id: &str) -> Vec<FolderVars> {
+    snapshot()
+        .collections
+        .into_iter()
+        .find(|c| c.id == collection_id)
+        .map(|c| c.folder_vars)
+        .unwrap_or_default()
 }
 
 /* --------------------------------- requests -------------------------------- */
@@ -183,7 +463,7 @@ fn merge_json(base: Value, patch: Value) -> Value {
 }
 
 pub fn upsert_request(input: Value) -> Result<ApiRequest, String> {
-    mutate(|ws| {
+    mutate(|project| {
         let collection_name = input
             .get("collectionName")
             .and_then(|v| v.as_str())
@@ -194,25 +474,25 @@ pub fn upsert_request(input: Value) -> Result<ApiRequest, String> {
             .map(|s| s.to_string());
 
         let collection = match collection_name {
-            Some(name) => ensure_collection(ws, &name),
+            Some(name) => ensure_collection(project, &name),
             None => match collection_id {
-                Some(id) => ws
+                Some(id) => project
                     .collections
                     .iter()
                     .find(|c| c.id == id)
                     .cloned()
-                    .unwrap_or_else(|| ensure_collection(ws, "默认集合")),
-                None => ensure_collection(ws, "默认集合"),
+                    .unwrap_or_else(|| ensure_collection(project, "默认集合")),
+                None => ensure_collection(project, "默认集合"),
             },
         };
 
         let existing_index = input
             .get("id")
             .and_then(|v| v.as_str())
-            .and_then(|id| ws.requests.iter().position(|r| r.id == id));
+            .and_then(|id| project.requests.iter().position(|r| r.id == id));
 
         let base = match existing_index {
-            Some(index) => ws.requests[index].clone(),
+            Some(index) => project.requests[index].clone(),
             None => ApiRequest::default(),
         };
         let base_value = serde_json::to_value(&base).unwrap_or_else(|_| json!({}));
@@ -234,11 +514,11 @@ pub fn upsert_request(input: Value) -> Result<ApiRequest, String> {
         }
 
         if let Some(index) = existing_index {
-            ws.requests[index] = request.clone();
+            project.requests[index] = request.clone();
         } else {
-            ws.requests.push(request.clone());
+            project.requests.push(request.clone());
         }
-        if let Some(col) = ws.collections.iter_mut().find(|c| c.id == collection.id) {
+        if let Some(col) = project.collections.iter_mut().find(|c| c.id == collection.id) {
             col.updated_at = now_ms();
         }
         request
@@ -246,15 +526,15 @@ pub fn upsert_request(input: Value) -> Result<ApiRequest, String> {
 }
 
 pub fn delete_request(id: &str) -> Result<bool, String> {
-    mutate(|ws| {
-        let before = ws.requests.len();
-        ws.requests.retain(|r| r.id != id);
-        ws.requests.len() < before
+    mutate(|project| {
+        let before = project.requests.len();
+        project.requests.retain(|r| r.id != id);
+        project.requests.len() < before
     })
 }
 
 pub fn get_request(id: &str) -> Option<ApiRequest> {
-    read_workspace().requests.into_iter().find(|r| r.id == id)
+    snapshot().requests.into_iter().find(|r| r.id == id)
 }
 
 /* ---------------------------------- import --------------------------------- */
@@ -265,19 +545,19 @@ pub fn apply_import(
     description: &str,
     replace: bool,
 ) -> Result<ImportResult, String> {
-    mutate(|ws| {
-        let collection = ensure_collection(ws, collection_name);
-        if description.is_empty() {
-            // keep existing description when merging
-        } else if let Some(col) = ws.collections.iter_mut().find(|c| c.id == collection.id) {
-            if col.description.is_empty() {
-                col.description = description.to_string();
+    mutate(|project| {
+        let collection = ensure_collection(project, collection_name);
+        if !description.is_empty() {
+            if let Some(col) = project.collections.iter_mut().find(|c| c.id == collection.id) {
+                if col.description.is_empty() {
+                    col.description = description.to_string();
+                }
             }
         }
         if replace {
-            ws.requests.retain(|r| r.collection_id != collection.id);
+            project.requests.retain(|r| r.collection_id != collection.id);
         }
-        let mut seen: Vec<String> = ws
+        let mut seen: Vec<String> = project
             .requests
             .iter()
             .filter(|r| r.collection_id == collection.id)
@@ -296,10 +576,10 @@ pub fn apply_import(
             req.collection_id = collection.id.clone();
             req.created_at = now_ms();
             req.updated_at = now_ms();
-            ws.requests.push(req);
+            project.requests.push(req);
             imported += 1;
         }
-        if let Some(col) = ws.collections.iter_mut().find(|c| c.id == collection.id) {
+        if let Some(col) = project.collections.iter_mut().find(|c| c.id == collection.id) {
             col.updated_at = now_ms();
         }
         ImportResult {
@@ -314,11 +594,11 @@ pub fn apply_import(
 /* ------------------------------- environments ------------------------------ */
 
 pub fn save_environment(env: Value) -> Result<Environment, String> {
-    mutate(|ws| {
+    mutate(|project| {
         let id = env.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
         let now = now_ms();
         if let Some(id) = id {
-            if let Some(existing) = ws.environments.iter_mut().find(|e| e.id == id) {
+            if let Some(existing) = project.environments.iter_mut().find(|e| e.id == id) {
                 if let Some(name) = env.get("name").and_then(|v| v.as_str()) {
                     existing.name = name.to_string();
                 }
@@ -345,33 +625,36 @@ pub fn save_environment(env: Value) -> Result<Environment, String> {
             created_at: now,
             updated_at: now,
         };
-        ws.environments.push(created.clone());
+        project.environments.push(created.clone());
         created
     })
 }
 
 pub fn delete_environment(id: &str) -> Result<bool, String> {
-    mutate(|ws| {
-        let before = ws.environments.len();
-        ws.environments.retain(|e| e.id != id);
-        if ws.active_environment_id.as_deref() == Some(id) {
-            ws.active_environment_id = None;
+    mutate(|project| {
+        let before = project.environments.len();
+        project.environments.retain(|e| e.id != id);
+        if project.active_environment_id.as_deref() == Some(id) {
+            project.active_environment_id = None;
         }
-        ws.environments.len() < before
+        project.environments.len() < before
     })
 }
 
 pub fn set_active_environment(id: Option<String>) -> Result<(), String> {
-    mutate(|ws| {
-        ws.active_environment_id = id;
+    mutate(|project| {
+        project.active_environment_id = id;
     })
 }
 
 pub fn replace_workspace(next: Workspace) -> Result<Workspace, String> {
-    mutate(|ws| {
-        *ws = next;
+    mutate(|project| {
+        project.collections = next.collections;
+        project.requests = next.requests;
+        project.environments = next.environments;
+        project.active_environment_id = next.active_environment_id;
     })?;
-    Ok(read_workspace())
+    Ok(snapshot())
 }
 
 /* ----------------------------------- misc ---------------------------------- */

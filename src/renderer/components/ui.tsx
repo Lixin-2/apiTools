@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { HttpMethod } from '../../shared/types';
 
 const icons: Record<string, React.ReactNode> = {
@@ -10,6 +11,7 @@ const icons: Record<string, React.ReactNode> = {
   ),
   plus: <path d="M12 5v14M5 12h14" />,
   chevron: <path d="m9 6 6 6-6 6" />,
+  'chevron-down': <path d="m6 9 6 6 6-6" />,
   trash: (
     <>
       <path d="M4 7h16" />
@@ -40,6 +42,24 @@ const icons: Record<string, React.ReactNode> = {
   ),
   close: <path d="m6 6 12 12M18 6 6 18" />,
   folder: <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h3l2 2.5h6A2.5 2.5 0 0 1 20 10v6.5A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-9Z" />,
+  'folder-plus': (
+    <>
+      <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h3l2 2.5h6A2.5 2.5 0 0 1 20 10v6.5A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-9Z" />
+      <path d="M12 11.5v5M9.5 14h5" />
+    </>
+  ),
+  'folder-collection': (
+    <>
+      <path d="M3.5 6.5A2 2 0 0 1 5.5 4.5h3l2 2.3h5.5a2 2 0 0 1 2 2v8.2a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2v-10Z" />
+      <path d="M8 12.5h6M8 15.5h4" />
+    </>
+  ),
+  edit: (
+    <>
+      <path d="M4 20h4l10-10-4-4L4 16v4Z" />
+      <path d="m13.5 6.5 4 4" />
+    </>
+  ),
   more: (
     <>
       <circle cx="6" cy="12" r="1.4" />
@@ -81,6 +101,32 @@ const icons: Record<string, React.ReactNode> = {
     <>
       <rect x="3.5" y="5" width="17" height="14" rx="2.5" />
       <path d="m7.5 10 2.5 2-2.5 2M12.5 14h4" />
+    </>
+  ),
+  sun: (
+    <>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M18.8 5.2l-1.4 1.4M6.6 17.4l-1.4 1.4" />
+    </>
+  ),
+  moon: <path d="M20 13.5A8 8 0 0 1 10.5 4a8.2 8.2 0 1 0 9.5 9.5Z" />,
+  info: (
+    <>
+      <circle cx="12" cy="12" r="8" />
+      <path d="M12 11v5.5M12 7.8v.2" />
+    </>
+  ),
+  key: (
+    <>
+      <circle cx="8" cy="12" r="3.2" />
+      <path d="M11.2 12H20M17 12v3M14.5 12v2.2" />
+    </>
+  ),
+  layers: (
+    <>
+      <path d="m12 4 8 4.5-8 4.5-8-4.5L12 4Z" />
+      <path d="m4 12.5 8 4.5 8-4.5" />
+      <path d="m4 16.5 8 4.5 8-4.5" />
     </>
   ),
 };
@@ -127,10 +173,156 @@ export function MethodTag({ method, mini }: { method: HttpMethod; mini?: boolean
   return (
     <span
       className={mini ? 'method-mini' : 'method-badge'}
-      style={mini ? { color } : { color, background: `${color}1f`, padding: '3px 8px', borderRadius: 6, fontFamily: 'var(--mono)', fontSize: 10.5, fontWeight: 700 }}
+      style={
+        mini
+          ? { color }
+          : {
+              color,
+              background: `color-mix(in srgb, ${color} 16%, transparent)`,
+              padding: '3px 8px',
+              borderRadius: 6,
+              fontFamily: 'var(--mono)',
+              fontSize: 10.5,
+              fontWeight: 700,
+            }
+      }
     >
       {method}
     </span>
+  );
+}
+
+/* ---------------------------------- select --------------------------------- */
+
+export interface SelectOption {
+  value: string;
+  label: string;
+  color?: string;
+  hint?: string;
+}
+
+export function Select({
+  value,
+  options,
+  onChange,
+  size = 'md',
+  color,
+  className = '',
+  align = 'left',
+  menuWidth,
+  style,
+}: {
+  value: string;
+  options: SelectOption[];
+  onChange: (value: string) => void;
+  size?: 'sm' | 'md';
+  color?: string;
+  className?: string;
+  align?: 'left' | 'right';
+  menuWidth?: number;
+  style?: React.CSSProperties;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const [anchor, setAnchor] = React.useState<{ left: number; top: number; width: number } | null>(null);
+  const rootRef = React.useRef<HTMLDivElement>(null);
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
+  const menuRef = React.useRef<HTMLDivElement>(null);
+
+  const openMenu = () => {
+    const element = triggerRef.current;
+    if (!element) return;
+    const rect = element.getBoundingClientRect();
+    setAnchor({ left: rect.left, top: rect.bottom + 5, width: rect.width });
+    setOpen(true);
+  };
+
+  // 菜单渲染后做一次边界夹紧，避免超出窗口右侧/底部
+  React.useLayoutEffect(() => {
+    if (!open || !anchor || !menuRef.current) return;
+    const menuRect = menuRef.current.getBoundingClientRect();
+    const margin = 10;
+    let left = anchor.left;
+    if (left + menuRect.width > window.innerWidth - margin) {
+      left = Math.max(margin, window.innerWidth - margin - menuRect.width);
+    }
+    let top = anchor.top;
+    if (top + menuRect.height > window.innerHeight - margin) {
+      top = Math.max(margin, anchor.top - menuRect.height - 34);
+    }
+    if (Math.abs(left - anchor.left) > 0.5 || Math.abs(top - anchor.top) > 0.5) {
+      setAnchor({ ...anchor, left, top });
+    }
+  }, [open, anchor]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const onDocDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (!rootRef.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false);
+    };
+    const close = () => setOpen(false);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDocDown);
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('resize', close);
+    window.addEventListener('scroll', close, true);
+    return () => {
+      document.removeEventListener('mousedown', onDocDown);
+      document.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', close);
+      window.removeEventListener('scroll', close, true);
+    };
+  }, [open]);
+
+  const current = options.find((option) => option.value === value);
+
+  return (
+    <div className={`select size-${size} ${open ? 'open' : ''} ${className}`} ref={rootRef} style={style}>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="select-trigger"
+        style={color ? { color } : undefined}
+        onClick={() => (open ? setOpen(false) : openMenu())}
+      >
+        <span className="select-value">{current?.label ?? value}</span>
+        <Icon name="chevron-down" size={11} />
+      </button>
+      {open &&
+        anchor &&
+        createPortal(
+          <div
+            ref={menuRef}
+            className="select-menu portal"
+            style={{
+              minWidth: menuWidth ?? Math.max(anchor.width, 150),
+              maxWidth: 340,
+              top: anchor.top,
+              left: anchor.left,
+            }}
+            role="listbox"
+          >
+            {options.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={`select-option ${option.value === value ? 'selected' : ''}`}
+                onClick={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+                style={option.color ? { color: option.color } : undefined}
+              >
+                <span>{option.label}</span>
+                {option.value === value && <Icon name="check" size={12} />}
+              </button>
+            ))}
+          </div>,
+          document.body,
+        )}
+    </div>
   );
 }
 

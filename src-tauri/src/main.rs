@@ -55,7 +55,39 @@ fn app_info(app: tauri::AppHandle, rest: State<'_, RestInfo>) -> Value {
 
 #[tauri::command]
 fn read_workspace() -> Value {
-    serde_json::to_value(store::read_workspace()).unwrap_or_else(|_| json!({}))
+    serde_json::to_value(store::snapshot()).unwrap_or_else(|_| json!({}))
+}
+
+#[tauri::command]
+fn create_project(name: String, description: Option<String>) -> Result<Value, String> {
+    let project = store::create_project(&name, &description.unwrap_or_default())?;
+    serde_json::to_value(project).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn rename_project(id: String, name: String, description: Option<String>) -> Result<(), String> {
+    store::rename_project(&id, &name, description)
+}
+
+#[tauri::command]
+fn delete_project(id: String) -> Result<bool, String> {
+    store::delete_project(&id)
+}
+
+#[tauri::command]
+fn set_active_project(id: String) -> Result<(), String> {
+    store::set_active_project(&id)
+}
+
+#[tauri::command]
+fn set_folder_config(
+    collection_id: String,
+    name: String,
+    variables: Vec<KeyValue>,
+    headers: Vec<KeyValue>,
+) -> Result<Value, String> {
+    let config = store::set_folder_config(&collection_id, &name, variables, headers)?;
+    serde_json::to_value(config).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -85,6 +117,21 @@ fn update_collection(id: String, patch: Value) -> Result<Option<Value>, String> 
 #[tauri::command]
 fn delete_collection(id: String) -> Result<bool, String> {
     store::delete_collection(&id)
+}
+
+#[tauri::command]
+fn create_folder(collection_id: String, name: String) -> Result<Vec<String>, String> {
+    store::create_folder(&collection_id, &name)
+}
+
+#[tauri::command]
+fn rename_folder(collection_id: String, old_name: String, new_name: String) -> Result<Vec<String>, String> {
+    store::rename_folder(&collection_id, &old_name, &new_name)
+}
+
+#[tauri::command]
+fn delete_folder(collection_id: String, name: String) -> Result<Vec<String>, String> {
+    store::delete_folder(&collection_id, &name)
 }
 
 #[tauri::command]
@@ -434,10 +481,18 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             app_info,
             read_workspace,
+            create_project,
+            rename_project,
+            delete_project,
+            set_active_project,
+            set_folder_config,
             replace_workspace,
             create_collection,
             update_collection,
             delete_collection,
+            create_folder,
+            rename_folder,
+            delete_folder,
             save_request,
             delete_request,
             get_request,
@@ -490,6 +545,17 @@ fn main() {
                         let _ = window.eval(
                             "document.querySelector('.send-btn') && document.querySelector('.send-btn').click();",
                         );
+                    }
+                });
+            }
+
+            // 调试/截图辅助：APITOOLS_EVAL="js" 时延迟执行一段前端脚本
+            if let Ok(script) = std::env::var("APITOOLS_EVAL") {
+                let handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(2200));
+                    if let Some(window) = handle.get_webview_window("main") {
+                        let _ = window.eval(&script);
                     }
                 });
             }

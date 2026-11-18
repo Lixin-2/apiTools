@@ -56,10 +56,28 @@ export interface ApiRequest {
   updatedAt: number;
 }
 
+export interface FolderVars {
+  name: string;
+  variables: KeyValue[];
+  headers: KeyValue[];
+}
+
 export interface Collection {
   id: string;
   name: string;
   description: string;
+  folders: string[];
+  folderVars: FolderVars[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ProjectSummary {
+  id: string;
+  name: string;
+  description: string;
+  collectionCount: number;
+  requestCount: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -80,7 +98,9 @@ export interface Environment {
 }
 
 export interface Workspace {
-  version: 1;
+  version: number;
+  projects: ProjectSummary[];
+  activeProjectId: string | null;
   collections: Collection[];
   requests: ApiRequest[];
   environments: Environment[];
@@ -157,7 +177,9 @@ export function newId(prefix = 'id'): string {
 
 export function createEmptyWorkspace(): Workspace {
   return {
-    version: 1,
+    version: 2,
+    projects: [],
+    activeProjectId: null,
     collections: [],
     requests: [],
     environments: [],

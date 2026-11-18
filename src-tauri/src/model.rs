@@ -152,10 +152,27 @@ pub struct Collection {
     pub name: String,
     #[serde(default)]
     pub description: String,
+    /// 集合下的目录（可包含空目录）。请求通过 `folder` 字段归属到目录。
+    #[serde(default)]
+    pub folders: Vec<String>,
+    /// 目录级变量与公共请求头，目录内的请求会继承
+    #[serde(default)]
+    pub folder_vars: Vec<FolderVars>,
     #[serde(default = "now_ms")]
     pub created_at: u64,
     #[serde(default = "now_ms")]
     pub updated_at: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderVars {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub variables: Vec<KeyValue>,
+    #[serde(default)]
+    pub headers: Vec<KeyValue>,
 }
 
 pub fn collection_id_default() -> String {
@@ -168,6 +185,8 @@ impl Collection {
             id: new_id("col"),
             name: name.into(),
             description: description.into(),
+            folders: Vec::new(),
+            folder_vars: Vec::new(),
             created_at: now_ms(),
             updated_at: now_ms(),
         }
@@ -206,11 +225,16 @@ pub fn env_id_default() -> String {
     new_id("env")
 }
 
+/// 返回给前端的视图：项目列表 + 当前项目的集合/接口/环境
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Workspace {
     #[serde(default = "version_default")]
     pub version: u32,
+    #[serde(default)]
+    pub projects: Vec<ProjectSummary>,
+    #[serde(default)]
+    pub active_project_id: Option<String>,
     #[serde(default)]
     pub collections: Vec<Collection>,
     #[serde(default)]
@@ -224,17 +248,103 @@ pub struct Workspace {
 }
 
 fn version_default() -> u32 {
-    1
+    2
 }
 
 impl Default for Workspace {
     fn default() -> Self {
         Workspace {
-            version: 1,
+            version: 2,
+            projects: Vec::new(),
+            active_project_id: None,
             collections: Vec::new(),
             requests: Vec::new(),
             environments: Vec::new(),
             active_environment_id: None,
+            updated_at: now_ms(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectSummary {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub collection_count: usize,
+    pub request_count: usize,
+    pub created_at: u64,
+    pub updated_at: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Project {
+    #[serde(default = "project_id_default")]
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub collections: Vec<Collection>,
+    #[serde(default)]
+    pub requests: Vec<ApiRequest>,
+    #[serde(default)]
+    pub environments: Vec<Environment>,
+    #[serde(default)]
+    pub active_environment_id: Option<String>,
+    #[serde(default = "now_ms")]
+    pub created_at: u64,
+    #[serde(default = "now_ms")]
+    pub updated_at: u64,
+}
+
+pub fn project_id_default() -> String {
+    new_id("prj")
+}
+
+impl Project {
+    pub fn new(name: impl Into<String>, description: impl Into<String>) -> Self {
+        Project {
+            id: new_id("prj"),
+            name: name.into(),
+            description: description.into(),
+            collections: Vec::new(),
+            requests: Vec::new(),
+            environments: Vec::new(),
+            active_environment_id: None,
+            created_at: now_ms(),
+            updated_at: now_ms(),
+        }
+    }
+}
+
+/// 落盘结构：多项目
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoredWorkspace {
+    #[serde(default = "stored_version_default")]
+    pub version: u32,
+    #[serde(default)]
+    pub projects: Vec<Project>,
+    #[serde(default)]
+    pub active_project_id: Option<String>,
+    #[serde(default = "now_ms")]
+    pub updated_at: u64,
+}
+
+fn stored_version_default() -> u32 {
+    2
+}
+
+impl Default for StoredWorkspace {
+    fn default() -> Self {
+        StoredWorkspace {
+            version: 2,
+            projects: Vec::new(),
+            active_project_id: None,
             updated_at: now_ms(),
         }
     }

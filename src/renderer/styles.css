@@ -1919,17 +1919,11 @@ body.resizing-row * {
   justify-content: center;
   margin-top: 4px;
 }
-.glow {
-  width: 56px;
-  height: 56px;
-  border-radius: 18px;
-  background: linear-gradient(135deg, #7c5cff, #22d3ee);
-  display: grid;
-  place-items: center;
-  font-size: 24px;
-  color: #0b0b10;
-  font-weight: 800;
-  box-shadow: 0 12px 40px rgba(124, 92, 255, 0.35);
+.welcome-mark {
+  filter: drop-shadow(0 14px 32px rgba(24, 24, 50, 0.16));
+}
+:root[data-theme='dark'] .welcome-mark {
+  filter: drop-shadow(0 14px 32px rgba(0, 0, 0, 0.5));
 }
 
 .spinner {

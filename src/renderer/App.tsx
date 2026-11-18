@@ -642,7 +642,9 @@ export default function App() {
           ) : (
             <div className="welcome">
               <div className="welcome-card">
-                <div className="glow">a</div>
+                <div className="welcome-mark">
+                  <AppMark size={68} />
+                </div>
                 <div className="welcome-title">本地优先的 API 调试台</div>
                 <div className="welcome-desc">
                   从一个集合开始，或导入现有的 OpenAPI / Postman 文档。

@@ -337,24 +337,25 @@ export function Select({
 
 /** 品牌标记：与新应用图标一致，随主题自动切换底色 */
 export function AppMark({ size = 22 }: { size?: number }) {
+  const gradientId = React.useId();
   return (
     <svg width={size} height={size} viewBox="0 0 64 64" className="app-mark" aria-hidden>
       <defs>
-        <linearGradient id="app-mark-line" x1="21" y1="43" x2="43" y2="21" gradientUnits="userSpaceOnUse">
+        <linearGradient id={gradientId} x1="17" y1="47" x2="47" y2="17" gradientUnits="userSpaceOnUse">
           <stop offset="0" stopColor="#7c5cff" />
           <stop offset="1" stopColor="#22d3ee" />
         </linearGradient>
       </defs>
       <rect x="2" y="2" width="60" height="60" rx="15" className="app-mark-bg" />
       <path
-        d="M21 43c0-11 22-9 22-22"
+        d="M17 47c0-14 30-12 30-30"
         fill="none"
-        stroke="url(#app-mark-line)"
-        strokeWidth="7"
+        stroke={`url(#${gradientId})`}
+        strokeWidth="6"
         strokeLinecap="round"
       />
-      <circle cx="21" cy="43" r="9" className="app-mark-node" />
-      <circle cx="43" cy="21" r="9" className="app-mark-node" />
+      <circle cx="17" cy="47" r="7.5" className="app-mark-node" />
+      <circle cx="47" cy="17" r="7.5" className="app-mark-node" />
     </svg>
   );
 }

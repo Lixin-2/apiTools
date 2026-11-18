@@ -1,0 +1,46 @@
+[package]
+name = "apitools"
+version = "1.0.0"
+description = "A local-first REST API debugger with import/export and MCP support"
+authors = ["li_xin"]
+edition = "2021"
+rust-version = "1.77"
+default-run = "apitools"
+
+[lib]
+name = "apitools_core"
+path = "src/lib.rs"
+
+[[bin]]
+name = "apitools"
+path = "src/main.rs"
+
+[[bin]]
+name = "apitools-mcp"
+path = "src/bin/apitools-mcp.rs"
+
+[features]
+default = ["custom-protocol"]
+# 由 tauri build 使用：把前端产物嵌入二进制（生产模式）
+custom-protocol = ["tauri/custom-protocol"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ureq = { version = "2", features = ["json", "tls"] }
+axum = "0.7"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time"] }
+notify = "6"
+rand = "0.8"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

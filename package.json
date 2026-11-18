@@ -1,0 +1,30 @@
+{
+  "name": "apitools",
+  "private": true,
+  "version": "1.0.0",
+  "description": "A local-first REST API debugger (Rust + Tauri) with import/export and MCP support",
+  "type": "module",
+  "scripts": {
+    "dev": "tauri dev",
+    "dev:renderer": "vite --port 5199 --strictPort",
+    "build:renderer": "vite build",
+    "build:mcp": "cargo build --release --manifest-path src-tauri/Cargo.toml --bin apitools-mcp && node scripts/copy-mcp.mjs",
+    "build": "npm run build:renderer",
+    "dist": "npm run build:mcp && tauri build --target aarch64-apple-darwin",
+    "mcp": "src-tauri/target/release/apitools-mcp",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.10.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.10.1",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11"
+  }
+}

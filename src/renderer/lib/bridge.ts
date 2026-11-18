@@ -1,0 +1,43 @@
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
+import type { ApiToolsApi } from '../global';
+
+function onWorkspaceChanged(callback: () => void): () => void {
+  let unlisten: (() => void) | null = null;
+  let stopped = false;
+  listen('workspace:changed', () => callback()).then((fn) => {
+    if (stopped) fn();
+    else unlisten = fn;
+  });
+  return () => {
+    stopped = true;
+    unlisten?.();
+  };
+}
+
+export function installTauriBridge(): void {
+  const api: ApiToolsApi = {
+    getAppInfo: () => invoke('app_info'),
+    readWorkspace: () => invoke('read_workspace'),
+    replaceWorkspace: (ws) => invoke('replace_workspace', { workspace: ws }),
+    createCollection: (name, description = '') => invoke('create_collection', { name, description }),
+    updateCollection: (id, patch) => invoke('update_collection', { id, patch }),
+    deleteCollection: (id) => invoke('delete_collection', { id }),
+    saveRequest: (input) => invoke('save_request', { input }),
+    deleteRequest: (id) => invoke('delete_request', { id }),
+    getRequest: (id) => invoke('get_request', { id }),
+    sendRequest: (payload) => invoke('send_request', { payload }),
+    importText: (payload) => invoke('import_text', { payload }),
+    importFile: (payload) => invoke('import_file', { payload: payload ?? {} }),
+    exportCollection: (payload) => invoke('export_collection', { payload }),
+    exportWorkspace: (payload) => invoke('export_workspace', { payload: payload ?? {} }),
+    saveEnvironment: (env) => invoke('save_environment', { env }),
+    deleteEnvironment: (id) => invoke('delete_environment', { id }),
+    setActiveEnvironment: (id) => invoke('set_active_environment', { id }),
+    openDataDir: () => invoke('open_data_dir'),
+    openExternal: (url) => invoke('open_external', { url }),
+    onWorkspaceChanged,
+  };
+
+  (window as unknown as { api: ApiToolsApi }).api = api;
+}

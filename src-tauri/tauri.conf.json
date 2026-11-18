@@ -1,0 +1,43 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "apiTools",
+  "version": "1.0.0",
+  "identifier": "com.lixin.apitools",
+  "build": {
+    "beforeDevCommand": "npm run dev:renderer",
+    "devUrl": "http://localhost:5199",
+    "beforeBuildCommand": "npm run build:renderer",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "apiTools",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1060,
+        "minHeight": 640,
+        "resizable": true,
+        "fullscreen": false,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "backgroundColor": "#121216"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["dmg", "app"],
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns"],
+    "resources": ["binaries/"],
+    "category": "DeveloperTool",
+    "shortDescription": "本地优先的 REST API 调试台",
+    "longDescription": "apiTools 是一个本地优先的 REST API 调试工具，支持 OpenAPI / Postman / HAR / cURL 导入导出，并通过 MCP 让 AI agent 直接写入接口。",
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    }
+  }
+}

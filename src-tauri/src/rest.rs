@@ -310,17 +310,4 @@ pub fn router(token: String) -> Router {
         .with_state(state)
 }
 
-pub async fn serve(port: u16) {
-    let token = store::api_token();
-    let app = router(token);
-    let bind = if port == 0 { DEFAULT_PORT } else { port };
-    match tokio::net::TcpListener::bind(("127.0.0.1", bind)).await {
-        Ok(listener) => {
-            eprintln!("[apitools] REST API listening on 127.0.0.1:{bind}");
-            if let Err(err) = axum::serve(listener, app).await {
-                eprintln!("[apitools] REST server error: {err}");
-            }
-        }
-        Err(err) => eprintln!("[apitools] 无法绑定 127.0.0.1:{bind} -> {err}"),
-    }
-}
+

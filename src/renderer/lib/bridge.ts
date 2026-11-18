@@ -18,6 +18,7 @@ function onWorkspaceChanged(callback: () => void): () => void {
 export function installTauriBridge(): void {
   const api: ApiToolsApi = {
     getAppInfo: () => invoke('app_info'),
+    setDockIcon: (dark) => invoke('set_dock_icon', { dark }),
     getSettings: () => invoke('get_settings'),
     updateMcpSettings: (payload) => invoke('update_mcp_settings', { enabled: payload.enabled, port: payload.port }),
     readWorkspace: () => invoke('read_workspace'),

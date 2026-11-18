@@ -156,6 +156,71 @@ fn app_info(app: tauri::AppHandle, rest: State<'_, RestInfo>) -> Value {
     })
 }
 
+fn theme_icon_path(app: &tauri::AppHandle, dark: bool) -> Option<PathBuf> {
+    let name = if dark { "icon-dark.png" } else { "icon-light.png" };
+    if let Ok(dir) = app.path().resource_dir() {
+        for candidate in [dir.join("icons").join(name), dir.join(name)] {
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
+    }
+    if let Some(exe_dir) = std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(|parent| parent.to_path_buf()))
+    {
+        for candidate in [exe_dir.join("icons").join(name), exe_dir.join(name)] {
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        let candidate = cwd.join("src-tauri").join("icons").join(name);
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+/// 根据浅色/深色外观切换 Dock 图标（浅色白底、深色黑底）
+#[tauri::command]
+fn set_dock_icon(app: tauri::AppHandle, dark: bool) {
+    #[cfg(target_os = "macos")]
+    {
+        let Some(path) = theme_icon_path(&app, dark) else {
+            eprintln!("[apitools] dock icon: 未找到图标资源");
+            return;
+        };
+        let Ok(bytes) = std::fs::read(&path) else {
+            return;
+        };
+        eprintln!(
+            "[apitools] dock icon -> {} ({})",
+            if dark { "dark" } else { "light" },
+            path.display()
+        );
+        let _ = app.run_on_main_thread(move || unsafe {
+            use objc2::{AnyThread, MainThreadMarker};
+            use objc2_app_kit::{NSApplication, NSImage};
+            use objc2_foundation::NSData;
+            let Some(mtm) = MainThreadMarker::new() else {
+                return;
+            };
+            let ns_app = NSApplication::sharedApplication(mtm);
+            let data = NSData::with_bytes(&bytes);
+            if let Some(image) = NSImage::initWithData(NSImage::alloc(), &data) {
+                ns_app.setApplicationIconImage(Some(&image));
+            }
+        });
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, dark);
+    }
+}
+
 #[tauri::command]
 fn get_settings() -> Value {
     let settings = store::read_settings();
@@ -616,6 +681,7 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             app_info,
+            set_dock_icon,
             get_settings,
             update_mcp_settings,
             read_workspace,

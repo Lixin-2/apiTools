@@ -110,6 +110,12 @@ const icons: Record<string, React.ReactNode> = {
     </>
   ),
   moon: <path d="M20 13.5A8 8 0 0 1 10.5 4a8.2 8.2 0 1 0 9.5 9.5Z" />,
+  monitor: (
+    <>
+      <rect x="3.5" y="4.5" width="17" height="12" rx="2.5" />
+      <path d="M9 20h6M12 16.5V20" />
+    </>
+  ),
   info: (
     <>
       <circle cx="12" cy="12" r="8" />

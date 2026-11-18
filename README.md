@@ -10,7 +10,8 @@
 - **请求调试**：GET / POST / PUT / PATCH / DELETE / HEAD / OPTIONS；参数、请求头、请求体（JSON / Text / Form / URL Encoded）；Bearer / Basic / API Key 鉴权
 - **集合与多级目录**：集合 → 目录（支持 `用户中心/登录` 这样的多级嵌套）→ 接口；目录可空、可重命名、可删除（删除时接口回到集合根级）
 - **环境设置**：每个环境配置「统一 URL 前缀」+「统一请求头」，发送时自动拼接与注入——接口里只写 `/users` 这种相对路径即可；接口写完整地址时不拼接，接口内同名 Header 优先
-- **主题与布局**：夜间 / 浅色模式切换；侧栏宽度、请求/响应分栏高度均可拖动，选择会记住
+- **外观**：浅色（默认）/ 深色 / 跟随系统三态，配色、JSON 高亮、遮罩随之变化；Dock 图标也区分浅色白底与深色黑底，随外观自动切换
+- **布局**：侧栏宽度、请求/响应分栏高度均可拖动，选择会记住
 - **导入**：OpenAPI 3 / Swagger 2、Postman Collection v2.1、HAR、cURL、apiTools JSON（自动识别格式）
 - **导出**：Postman Collection v2.1、OpenAPI 3.0、apiTools JSON（可复制或保存文件）
 - **MCP**：agent 通过 MCP 工具导入接口、查询集合、导出文档、直接发请求验证

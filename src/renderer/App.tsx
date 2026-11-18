@@ -22,9 +22,10 @@ import {
   McpDialog,
   Modal,
 } from './components/Dialogs';
-import { Icon } from './components/ui';
+import { Icon, Select } from './components/ui';
 
 type DialogKey = 'import' | 'mcp' | 'env' | null;
+type ThemeMode = 'light' | 'dark' | 'system';
 
 function utf8ToBase64(input: string): string {
   const bytes = new TextEncoder().encode(input);
@@ -61,15 +62,31 @@ export default function App() {
     onSubmit: (value: string) => void;
   } | null>(null);
 
-  const [theme, setTheme] = React.useState<'dark' | 'light'>(() => {
-    const saved = localStorage.getItem('apitools-theme');
-    return saved === 'light' ? 'light' : 'dark';
+  const [themeMode, setThemeMode] = React.useState<ThemeMode>(() => {
+    const saved = localStorage.getItem('apitools-theme-mode');
+    if (saved === 'light' || saved === 'dark' || saved === 'system') return saved;
+    return localStorage.getItem('apitools-theme') === 'dark' ? 'dark' : 'light';
   });
 
+  const [systemDark, setSystemDark] = React.useState(
+    () => window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false,
+  );
+
   React.useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    localStorage.setItem('apitools-theme', theme);
-  }, [theme]);
+    const query = window.matchMedia('(prefers-color-scheme: dark)');
+    const handler = (event: MediaQueryListEvent) => setSystemDark(event.matches);
+    query.addEventListener('change', handler);
+    return () => query.removeEventListener('change', handler);
+  }, []);
+
+  const resolvedTheme: 'light' | 'dark' =
+    themeMode === 'system' ? (systemDark ? 'dark' : 'light') : themeMode;
+
+  React.useEffect(() => {
+    document.documentElement.dataset.theme = resolvedTheme;
+    localStorage.setItem('apitools-theme-mode', themeMode);
+    window.api.setDockIcon?.(resolvedTheme === 'dark');
+  }, [resolvedTheme, themeMode]);
 
   const [sidebarWidth, setSidebarWidth] = React.useState<number>(() => {
     const saved = Number(localStorage.getItem('apitools-sidebar-width'));
@@ -493,13 +510,26 @@ export default function App() {
             <Icon name="robot" size={13} />
             MCP
           </button>
-          <button
-            className="chip-button ghost theme-toggle"
-            title={theme === 'dark' ? '切换到浅色模式' : '切换到夜间模式'}
-            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-          >
-            <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={14} />
-          </button>
+          <div className="theme-picker" title="外观">
+            <Icon
+              name={
+                themeMode === 'system' ? 'monitor' : resolvedTheme === 'dark' ? 'moon' : 'sun'
+              }
+              size={13}
+            />
+            <Select
+              value={themeMode}
+              onChange={(value) => setThemeMode(value as ThemeMode)}
+              options={[
+                { value: 'light', label: '浅色' },
+                { value: 'dark', label: '深色' },
+                { value: 'system', label: '跟随系统' },
+              ]}
+              size="sm"
+              style={{ width: 116 }}
+              menuWidth={140}
+            />
+          </div>
           <button
             className="chip-button ghost"
             title="刷新数据"

@@ -43,6 +43,7 @@ export interface ImportOutcome {
 
 export interface ApiToolsApi {
   getAppInfo(): Promise<AppInfo>;
+  setDockIcon(dark: boolean): Promise<void>;
   getSettings(): Promise<AppSettings>;
   updateMcpSettings(payload: { enabled: boolean; port: number }): Promise<AppSettings>;
   readWorkspace(): Promise<Workspace>;

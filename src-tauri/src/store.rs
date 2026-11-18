@@ -578,15 +578,10 @@ pub fn apply_import(
 /* ------------------------------- environments ------------------------------ */
 
 pub fn save_environment(env: Value) -> Result<Environment, String> {
-    let base_url = env
-        .get("baseUrl")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default()
-        .to_string();
-    let headers: Vec<KeyValue> = env
+    let base_url = env.get("baseUrl").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let headers: Option<Vec<KeyValue>> = env
         .get("headers")
-        .and_then(|v| serde_json::from_value(v.clone()).ok())
-        .unwrap_or_default();
+        .and_then(|v| serde_json::from_value(v.clone()).ok());
     let variables: Option<Vec<EnvVar>> = env
         .get("variables")
         .and_then(|v| serde_json::from_value(v.clone()).ok());
@@ -599,8 +594,12 @@ pub fn save_environment(env: Value) -> Result<Environment, String> {
                 if let Some(name) = env.get("name").and_then(|v| v.as_str()) {
                     existing.name = name.to_string();
                 }
-                existing.base_url = base_url.clone();
-                existing.headers = headers.clone();
+                if let Some(base_url) = base_url.clone() {
+                    existing.base_url = base_url;
+                }
+                if let Some(headers) = headers.clone() {
+                    existing.headers = headers;
+                }
                 if let Some(variables) = variables.clone() {
                     existing.variables = variables;
                 }
@@ -615,8 +614,8 @@ pub fn save_environment(env: Value) -> Result<Environment, String> {
                 .and_then(|v| v.as_str())
                 .unwrap_or("新环境")
                 .to_string(),
-            base_url: base_url.clone(),
-            headers: headers.clone(),
+            base_url: base_url.unwrap_or_default(),
+            headers: headers.unwrap_or_default(),
             variables: variables.unwrap_or_default(),
             created_at: now,
             updated_at: now,

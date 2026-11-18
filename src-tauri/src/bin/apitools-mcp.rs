@@ -33,6 +33,27 @@ fn arg_map(args: &Value, key: &str) -> BTreeMap<String, String> {
         .unwrap_or_default()
 }
 
+fn add_path_with_parents(set: &mut std::collections::BTreeSet<String>, path: &str) {
+    let segments: Vec<&str> = path.split('/').filter(|part| !part.trim().is_empty()).collect();
+    let mut accumulated = String::new();
+    for segment in segments {
+        if !accumulated.is_empty() {
+            accumulated.push('/');
+        }
+        accumulated.push_str(segment.trim());
+        set.insert(accumulated.clone());
+    }
+}
+
+fn request_summary(request: &ApiRequest) -> Value {
+    json!({
+        "id": request.id,
+        "method": request.method,
+        "name": request.name,
+        "url": request.url,
+    })
+}
+
 fn text(value: impl Into<Value>) -> Value {
     let value = value.into();
     let body = match value {
@@ -161,7 +182,7 @@ fn tool_defs() -> Value {
         },
         {
             "name": "send_request",
-            "description": "代理发送一次 HTTP 请求并返回状态码、响应头与响应体。",
+            "description": "代理发送一次 HTTP 请求并返回状态码、响应头与响应体。applyEnvironment=true 时会套用当前启用环境的 URL 前缀与统一请求头。",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -169,7 +190,8 @@ fn tool_defs() -> Value {
                     "url": { "type": "string" },
                     "headers": { "type": "object", "additionalProperties": { "type": "string" } },
                     "body": { "type": "string" },
-                    "timeoutMs": { "type": "number" }
+                    "timeoutMs": { "type": "number" },
+                    "applyEnvironment": { "type": "boolean", "description": "是否套用环境 URL 前缀与统一请求头，默认 false" }
                 },
                 "required": ["url"]
             }
@@ -178,6 +200,87 @@ fn tool_defs() -> Value {
             "name": "list_environments",
             "description": "列出 apiTools 中保存的环境（统一 URL 前缀与统一请求头）。",
             "inputSchema": { "type": "object", "properties": {} }
+        },
+        {
+            "name": "list_projects",
+            "description": "列出所有项目及当前激活项目。MCP 的其他写操作都作用于当前激活项目。",
+            "inputSchema": { "type": "object", "properties": {} }
+        },
+        {
+            "name": "switch_project",
+            "description": "切换当前激活项目（后续操作作用于此项目）。",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string" },
+                    "name": { "type": "string", "description": "项目名称，与 id 二选一" }
+                }
+            }
+        },
+        {
+            "name": "create_project",
+            "description": "新建项目并自动切换为当前项目。",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string" },
+                    "description": { "type": "string" }
+                },
+                "required": ["name"]
+            }
+        },
+        {
+            "name": "get_project_tree",
+            "description": "获取当前项目的完整结构：集合、多级目录（含完整路径，如 用户中心/登录）、每个目录下的接口摘要，以及当前环境的 URL 前缀。把新接口写进去之前先调用它，就能确定 save_request 的 collectionName 与 folder 取值。",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "includeRequests": { "type": "boolean", "description": "是否包含接口摘要，默认 true" },
+                    "collectionName": { "type": "string", "description": "只看某个集合" }
+                }
+            }
+        },
+        {
+            "name": "create_folder",
+            "description": "在集合下创建目录，path 支持多级，例如 用户中心/登录。已存在则忽略。",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "collectionId": { "type": "string" },
+                    "collectionName": { "type": "string", "description": "与 collectionId 二选一" },
+                    "path": { "type": "string", "description": "目录路径，例如 用户中心/登录" }
+                },
+                "required": ["path"]
+            }
+        },
+        {
+            "name": "delete_collection",
+            "description": "删除集合及其下所有接口。",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "collectionId": { "type": "string" },
+                    "collectionName": { "type": "string" }
+                }
+            }
+        },
+        {
+            "name": "save_environment",
+            "description": "创建或更新环境：配置统一 URL 前缀与统一请求头（发送时自动拼接/注入）。",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "更新时传入" },
+                    "name": { "type": "string", "description": "环境名称，不传 id 时可据此查找" },
+                    "baseUrl": { "type": "string", "description": "统一 URL 前缀，例如 https://api.example.com/v1" },
+                    "headers": {
+                        "type": "object",
+                        "additionalProperties": { "type": "string" },
+                        "description": "统一请求头，会整体替换已有配置"
+                    },
+                    "activate": { "type": "boolean", "description": "是否设为当前启用环境，默认 false" }
+                }
+            }
         }
     ])
 }
@@ -426,19 +529,315 @@ fn call_tool(name: &str, args: &Value) -> Value {
             text(output.content)
         }
         "send_request" => {
-            let Some(url) = arg_str(args, "url") else {
+            let Some(mut url) = arg_str(args, "url") else {
                 return fail("url 不能为空");
             };
             let method = arg_str(args, "method").unwrap_or_else(|| "GET".to_string());
-            let headers = arg_map(args, "headers");
+            let mut headers = arg_map(args, "headers");
             let body = arg_str(args, "body");
             let timeout = arg_u64(args, "timeoutMs");
+            let apply_environment = args
+                .get("applyEnvironment")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+
+            if apply_environment {
+                let ws = store::read_workspace();
+                if let Some(env) = ws
+                    .active_environment_id
+                    .as_ref()
+                    .and_then(|id| ws.environments.iter().find(|e| &e.id == id))
+                {
+                    if !url.starts_with("http://")
+                        && !url.starts_with("https://")
+                        && !env.base_url.trim().is_empty()
+                    {
+                        url = format!(
+                            "{}/{}",
+                            env.base_url.trim().trim_end_matches('/'),
+                            url.trim_start_matches('/')
+                        );
+                    }
+                    for header in env.headers.iter() {
+                        if header.enabled && !header.key.trim().is_empty() {
+                            headers
+                                .entry(header.key.clone())
+                                .or_insert_with(|| header.value.clone());
+                        }
+                    }
+                }
+            }
+
             let response = http_client::execute(&method, &url, &headers, body.as_deref(), timeout);
-            text(serde_json::to_value(response).unwrap_or_default())
+            let mut payload = serde_json::to_value(response).unwrap_or_default();
+            if let Value::Object(map) = &mut payload {
+                map.insert("requestUrl".into(), json!(url));
+            }
+            text(payload)
         }
         "list_environments" => {
             let ws = store::read_workspace();
             text(serde_json::to_value(ws.environments).unwrap_or_default())
+        }
+        "list_projects" => {
+            let ws = store::read_workspace();
+            let items: Vec<Value> = ws
+                .projects
+                .iter()
+                .map(|project| {
+                    json!({
+                        "id": project.id,
+                        "name": project.name,
+                        "description": project.description,
+                        "collectionCount": project.collection_count,
+                        "requestCount": project.request_count,
+                        "active": ws.active_project_id.as_deref() == Some(project.id.as_str()),
+                    })
+                })
+                .collect();
+            text(json!({
+                "projects": items,
+                "dataDir": store::data_dir().to_string_lossy()
+            }))
+        }
+        "switch_project" => {
+            let ws = store::read_workspace();
+            let target = arg_str(args, "id").or_else(|| {
+                arg_str(args, "name").and_then(|name| {
+                    ws.projects
+                        .iter()
+                        .find(|project| project.name == name)
+                        .map(|project| project.id.clone())
+                })
+            });
+            let Some(id) = target else {
+                return fail("请提供项目 id 或 name");
+            };
+            match store::set_active_project(&id) {
+                Ok(_) => {
+                    let next = store::read_workspace();
+                    let project = next.projects.iter().find(|p| p.id == id);
+                    text(json!({
+                        "ok": true,
+                        "activeProject": project.map(|p| json!({
+                            "id": p.id,
+                            "name": p.name,
+                            "collectionCount": p.collection_count,
+                            "requestCount": p.request_count
+                        }))
+                    }))
+                }
+                Err(err) => fail(err),
+            }
+        }
+        "create_project" => {
+            let Some(name) = arg_str(args, "name") else {
+                return fail("name 不能为空");
+            };
+            let description = arg_str(args, "description").unwrap_or_default();
+            match store::create_project(&name, &description) {
+                Ok(project) => text(json!({
+                    "ok": true,
+                    "project": project,
+                    "note": "新项目已成为当前项目"
+                })),
+                Err(err) => fail(err),
+            }
+        }
+        "get_project_tree" => {
+            let ws = store::read_workspace();
+            let include_requests = args
+                .get("includeRequests")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            let only_collection = arg_str(args, "collectionName");
+
+            let project = ws
+                .projects
+                .iter()
+                .find(|p| ws.active_project_id.as_deref() == Some(p.id.as_str()));
+            let environment = ws
+                .active_environment_id
+                .as_ref()
+                .and_then(|id| ws.environments.iter().find(|e| &e.id == id))
+                .map(|env| {
+                    json!({
+                        "id": env.id,
+                        "name": env.name,
+                        "baseUrl": env.base_url,
+                        "headers": env
+                            .headers
+                            .iter()
+                            .filter(|h| h.enabled && !h.key.is_empty())
+                            .map(|h| json!({ "key": h.key, "value": h.value }))
+                            .collect::<Vec<_>>()
+                    })
+                });
+
+            let mut collections_out: Vec<Value> = Vec::new();
+            for collection in ws.collections.iter() {
+                if let Some(name) = &only_collection {
+                    if &collection.name != name {
+                        continue;
+                    }
+                }
+                let mut paths: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+                for folder in collection.folders.iter() {
+                    let trimmed = folder.trim();
+                    if !trimmed.is_empty() {
+                        add_path_with_parents(&mut paths, trimmed);
+                    }
+                }
+                let requests: Vec<&ApiRequest> = ws
+                    .requests
+                    .iter()
+                    .filter(|request| request.collection_id == collection.id)
+                    .collect();
+                for request in requests.iter() {
+                    let trimmed = request.folder.trim();
+                    if !trimmed.is_empty() {
+                        add_path_with_parents(&mut paths, trimmed);
+                    }
+                }
+
+                let folders: Vec<Value> = paths
+                    .iter()
+                    .map(|path| {
+                        let matched: Vec<Value> = requests
+                            .iter()
+                            .filter(|request| request.folder.trim() == path.as_str())
+                            .map(|request| request_summary(request))
+                            .collect();
+                        let count = matched.len();
+                        json!({
+                            "path": path,
+                            "depth": path.matches('/').count(),
+                            "requestCount": count,
+                            "requests": if include_requests { Value::Array(matched) } else { Value::Array(Vec::new()) }
+                        })
+                    })
+                    .collect();
+
+                let root_requests: Vec<Value> = requests
+                    .iter()
+                    .filter(|request| request.folder.trim().is_empty())
+                    .map(|request| request_summary(request))
+                    .collect();
+
+                collections_out.push(json!({
+                    "id": collection.id,
+                    "name": collection.name,
+                    "description": collection.description,
+                    "requestCount": requests.len(),
+                    "rootRequests": if include_requests { Value::Array(root_requests) } else { Value::Array(Vec::new()) },
+                    "folders": folders,
+                }));
+            }
+
+            text(json!({
+                "project": project.map(|p| json!({
+                    "id": p.id,
+                    "name": p.name,
+                    "description": p.description
+                })),
+                "activeEnvironment": environment,
+                "collections": collections_out,
+                "hint": "save_request 的 collectionName 用集合 name，folder 用目录 path（多级用 / 分隔）；目录不存在可先调 create_folder"
+            }))
+        }
+        "create_folder" => {
+            let ws = store::read_workspace();
+            let collection_id = arg_str(args, "collectionId").or_else(|| {
+                arg_str(args, "collectionName").and_then(|name| {
+                    ws.collections
+                        .iter()
+                        .find(|collection| collection.name == name)
+                        .map(|collection| collection.id.clone())
+                })
+            });
+            let Some(collection_id) = collection_id else {
+                return fail("需要 collectionId 或 collectionName");
+            };
+            let Some(path) = arg_str(args, "path") else {
+                return fail("path 不能为空");
+            };
+            let trimmed = path.trim().trim_matches('/').to_string();
+            if trimmed.is_empty() {
+                return fail("path 不能为空");
+            }
+            match store::create_folder(&collection_id, &trimmed) {
+                Ok(folders) => text(json!({
+                    "ok": true,
+                    "collectionId": collection_id,
+                    "path": trimmed,
+                    "folders": folders
+                })),
+                Err(err) => fail(err),
+            }
+        }
+        "delete_collection" => {
+            let ws = store::read_workspace();
+            let id = arg_str(args, "collectionId").or_else(|| {
+                arg_str(args, "collectionName").and_then(|name| {
+                    ws.collections
+                        .iter()
+                        .find(|collection| collection.name == name)
+                        .map(|collection| collection.id.clone())
+                })
+            });
+            let Some(id) = id else {
+                return fail("需要 collectionId 或 collectionName");
+            };
+            match store::delete_collection(&id) {
+                Ok(ok) => text(json!({ "ok": ok })),
+                Err(err) => fail(err),
+            }
+        }
+        "save_environment" => {
+            let mut payload = serde_json::Map::new();
+            if let Some(id) = arg_str(args, "id") {
+                payload.insert("id".into(), json!(id));
+            }
+            if let Some(name) = arg_str(args, "name") {
+                if !payload.contains_key("id") {
+                    if let Some(existing) = store::read_workspace()
+                        .environments
+                        .iter()
+                        .find(|environment| environment.name == name)
+                    {
+                        payload.insert("id".into(), json!(existing.id));
+                    }
+                }
+                payload.insert("name".into(), json!(name));
+            }
+            if let Some(base_url) = arg_str(args, "baseUrl") {
+                payload.insert("baseUrl".into(), json!(base_url));
+            }
+            if args.get("headers").is_some() {
+                let headers = arg_map(args, "headers");
+                payload.insert(
+                    "headers".into(),
+                    Value::Array(
+                        headers
+                            .into_iter()
+                            .map(|(key, value)| json!({ "key": key, "value": value, "enabled": true }))
+                            .collect(),
+                    ),
+                );
+            }
+            match store::save_environment(Value::Object(payload)) {
+                Ok(environment) => {
+                    let activate = args
+                        .get("activate")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    if activate {
+                        let _ = store::set_active_environment(Some(environment.id.clone()));
+                    }
+                    text(serde_json::to_value(environment).unwrap_or_default())
+                }
+                Err(err) => fail(err),
+            }
         }
         other => fail(format!("未知工具: {other}")),
     }

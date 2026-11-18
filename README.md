@@ -111,16 +111,19 @@ MCP Server 随应用分发：`apiTools.app/Contents/Resources/binaries/apitools-
 
 | 工具 | 说明 |
 | --- | --- |
+| `get_project_tree` | **推荐先调用**：返回当前项目 → 集合 → 多级目录（完整 path）→ 每个目录下的接口摘要，以及当前环境的 URL 前缀与统一请求头 |
+| `list_projects` / `switch_project` / `create_project` | 查看、切换、新建项目（写操作都作用于当前项目） |
+| `list_collections` / `create_collection` / `delete_collection` | 集合管理 |
+| `create_folder` | 新建目录，`path` 支持多级，如 `用户中心/登录` |
+| `list_requests` / `get_request` | 浏览接口 |
+| `save_request` / `delete_request` | 维护单个接口（`collectionName` + `folder` 决定落点） |
 | `import_api_document` | 传入 OpenAPI / Postman / HAR / cURL 原文并入库（自动识别格式） |
 | `import_api_from_url` | 从远程 URL 拉取接口文档并导入 |
-| `create_collection` / `list_collections` | 创建、列出集合 |
-| `list_requests` / `get_request` | 浏览接口 |
-| `save_request` / `delete_request` | 维护单个接口 |
 | `export_collection` | 导出为 Postman / OpenAPI / apiTools |
-| `send_request` | 代理发送请求，返回状态码与响应 |
-| `list_environments` | 查看环境变量 |
+| `list_environments` / `save_environment` | 查看、配置环境（统一 URL 前缀与统一请求头） |
+| `send_request` | 代理发送请求；`applyEnvironment: true` 时自动套用当前环境的 URL 前缀与统一请求头 |
 
-示例：对 agent 说「把 https://petstore3.swagger.io/api/v3/openapi.json 的接口导入 apiTools」，agent 调用 `import_api_from_url` 后接口立即出现在应用里。
+示例：对 agent 说「把这块接口加到 演示项目 / 示例服务 / 用户中心/登录 下面」，agent 会先 `get_project_tree` 确认目录路径，再 `save_request` 带上 `collectionName: "示例服务"` 和 `folder: "用户中心/登录"`。
 
 ## 本地 REST API
 

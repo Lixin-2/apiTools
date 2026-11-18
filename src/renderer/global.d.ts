@@ -19,6 +19,17 @@ export interface AppInfo {
   dataFile: string;
   mcpServerPath: string;
   mcpCommand: string;
+  mcpEnabled: boolean;
+  mcpRunning: boolean;
+  mcpPort: number;
+  mcpHttpUrl: string;
+}
+
+export interface AppSettings {
+  mcpEnabled: boolean;
+  mcpPort: number;
+  mcpRunning: boolean;
+  mcpHttpUrl: string;
 }
 
 export interface ImportOutcome {
@@ -32,6 +43,8 @@ export interface ImportOutcome {
 
 export interface ApiToolsApi {
   getAppInfo(): Promise<AppInfo>;
+  getSettings(): Promise<AppSettings>;
+  updateMcpSettings(payload: { enabled: boolean; port: number }): Promise<AppSettings>;
   readWorkspace(): Promise<Workspace>;
   replaceWorkspace(ws: Workspace): Promise<Workspace>;
   createCollection(name: string, description?: string): Promise<Collection>;

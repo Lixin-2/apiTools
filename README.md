@@ -92,7 +92,25 @@ MCP Server 随应用分发：`apiTools.app/Contents/Resources/binaries/apitools-
 
 ## MCP 接入
 
-在 Claude Desktop / CodeBuddy / Cursor 的 MCP 配置中添加：
+应用内置两种传输方式，右上角 **MCP** 面板可开关服务、修改端口（默认 `4732`，存于数据目录 `settings.json`），并一键复制配置。
+
+**方式一：HTTP（推荐，可开关）**
+
+在 MCP 面板打开「HTTP MCP 服务」后：
+
+```json
+{
+  "mcpServers": {
+    "apitools": {
+      "url": "http://127.0.0.1:4732/mcp"
+    }
+  }
+}
+```
+
+端点：`POST http://127.0.0.1:4732/mcp`（JSON-RPC），`GET /health` 可用于探活。端口被占用时会提示更换；应用启动时若端口冲突会自动回退到随机端口，但保留你的配置。
+
+**方式二：stdio 本地进程**
 
 ```json
 {
@@ -105,7 +123,7 @@ MCP Server 随应用分发：`apiTools.app/Contents/Resources/binaries/apitools-
 }
 ```
 
-应用内点击右上角 **MCP** 按钮可一键复制该配置（路径按实际安装位置生成）。
+两种方式使用同一套工具实现（`apitools_core::mcp`），数据完全一致。
 
 ### MCP 工具
 

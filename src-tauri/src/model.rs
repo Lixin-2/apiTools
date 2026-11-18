@@ -314,6 +314,29 @@ impl Project {
 }
 
 /// 落盘结构：多项目
+/// 应用设置（settings.json）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppSettings {
+    #[serde(default)]
+    pub mcp_enabled: bool,
+    #[serde(default = "default_mcp_port")]
+    pub mcp_port: u16,
+}
+
+fn default_mcp_port() -> u16 {
+    4732
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        AppSettings {
+            mcp_enabled: false,
+            mcp_port: default_mcp_port(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StoredWorkspace {

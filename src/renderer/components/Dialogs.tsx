@@ -7,8 +7,8 @@ import {
   KeyValue,
   createKeyValue,
 } from '../../shared/types';
-import type { AppInfo, ImportOutcome } from '../global';
-import { CopyButton, Icon, Select } from './ui';
+import type { AppInfo, AppSettings, ImportOutcome } from '../global';
+import { CopyButton, Icon, Select, Switch } from './ui';
 
 export function Modal({
   title,
@@ -327,34 +327,58 @@ export function ExportDialog({
 /* ----------------------------------- MCP ----------------------------------- */
 
 export function McpDialog({ info, onClose }: { info: AppInfo | null; onClose: () => void }) {
+  const [settings, setSettings] = React.useState<AppSettings | null>(null);
+  const [enabled, setEnabled] = React.useState(false);
+  const [port, setPort] = React.useState('4732');
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState('');
+  const [mode, setMode] = React.useState<'http' | 'stdio'>('http');
+
+  React.useEffect(() => {
+    window.api.getSettings().then((next) => {
+      setSettings(next);
+      setEnabled(next.mcpEnabled);
+      setPort(String(next.mcpPort));
+    });
+  }, []);
+
   if (!info) return null;
+
   const serverPath = info.mcpServerPath || info.mcpCommand.replace(/^node\s+"?/, '').replace(/"$/, '');
-  const mcpConfig = JSON.stringify(
-    {
-      mcpServers: {
-        apitools: {
-          command: serverPath,
-          args: [],
-        },
-      },
-    },
-    null,
-    2,
-  );
-  const curlExample = `curl -X POST http://127.0.0.1:${info.port}/import \\
-  -H "content-type: application/json" \\
-  -H "x-apitools-token: ${info.token}" \\
-  -d '{"format":"openapi","content":"{...}"}'`;
+  const httpUrl = settings?.mcpHttpUrl ?? `http://127.0.0.1:${port}/mcp`;
+  const running = settings?.mcpRunning ?? false;
+
+  const httpConfig = JSON.stringify({ mcpServers: { apitools: { url: httpUrl } } }, null, 2);
+  const stdioConfig = JSON.stringify({ mcpServers: { apitools: { command: serverPath, args: [] } } }, null, 2);
+
+  const apply = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const parsed = Number(port);
+      if (!Number.isInteger(parsed) || parsed < 1024 || parsed > 65535) {
+        throw new Error('端口需在 1024 - 65535 之间');
+      }
+      const next = await window.api.updateMcpSettings({ enabled, port: parsed });
+      setSettings(next);
+      setEnabled(next.mcpEnabled);
+      setPort(String(next.mcpPort));
+    } catch (err: any) {
+      setError(err?.message ?? String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <Modal
-      title="MCP 与 REST 接入"
-      subtitle="让 AI agent 直接把接口导入 apiTools，无需手工复制"
+      title="MCP 接入"
+      subtitle="内置 MCP 服务可开关、可自定义端口；也支持让客户端直接拉起 stdio 版本"
       onClose={onClose}
       wide
       footer={
         <>
-          <span className="help">MCP 服务由 Rust 编写，随应用分发，无需额外依赖</span>
+          <span className="help">{running ? `运行中 · ${httpUrl}` : 'MCP HTTP 服务未启动'}</span>
           <span className="spacer" />
           <button className="chip-button" onClick={() => window.api.openDataDir()}>
             打开数据目录
@@ -365,25 +389,89 @@ export function McpDialog({ info, onClose }: { info: AppInfo | null; onClose: ()
         </>
       }
     >
+      <div className="mcp-status">
+        <div className="mcp-status-left">
+          <span className={`status-dot ${running ? '' : 'off'}`} />
+          <div>
+            <div className="mcp-status-title">
+              {running ? 'HTTP MCP 服务运行中' : 'HTTP MCP 服务已关闭'}
+            </div>
+            <div className="help">
+              {running ? httpUrl : '开启后，支持 HTTP 的客户端可直接通过 URL 连接'}
+            </div>
+          </div>
+        </div>
+        <Switch checked={enabled} onChange={setEnabled} />
+      </div>
+
+      <div className="form-row">
+        <span className="field-label" style={{ width: 36 }}>
+          端口
+        </span>
+        <input
+          className="text-input"
+          style={{ width: 110 }}
+          value={port}
+          placeholder="4732"
+          onChange={(e) => setPort(e.target.value.replace(/[^0-9]/g, ''))}
+        />
+        <button className="chip-button primary" onClick={apply} disabled={busy}>
+          {busy ? '应用中…' : '保存并应用'}
+        </button>
+        <span className="help">默认 4732，端口被占用时会提示更换</span>
+      </div>
+
+      {error && (
+        <div className="result-box" style={{ color: 'var(--danger)' }}>
+          {error}
+        </div>
+      )}
+
+      <div className="mini-tabs">
+        <button className={mode === 'http' ? 'active' : ''} onClick={() => setMode('http')}>
+          HTTP（推荐）
+        </button>
+        <button className={mode === 'stdio' ? 'active' : ''} onClick={() => setMode('stdio')}>
+          stdio 本地进程
+        </button>
+      </div>
+
+      <div>
+        <div className="field-label" style={{ marginBottom: 6 }}>
+          客户端配置（Claude Desktop / CodeBuddy / Cursor）
+        </div>
+        <pre className="import-textarea" style={{ minHeight: 120, margin: 0, overflow: 'auto' }}>
+          {mode === 'http' ? httpConfig : stdioConfig}
+        </pre>
+        <div className="form-row" style={{ marginTop: 8 }}>
+          <button
+            className="chip-button"
+            onClick={() => navigator.clipboard.writeText(mode === 'http' ? httpConfig : stdioConfig)}
+          >
+            <Icon name="copy" size={12} />
+            复制配置
+          </button>
+          {mode === 'stdio' && (
+            <button className="chip-button" onClick={() => navigator.clipboard.writeText(serverPath)}>
+              <Icon name="terminal" size={12} />
+              复制可执行文件路径
+            </button>
+          )}
+        </div>
+      </div>
+
       <div className="info-row">
-        <span className="label">本地 REST API</span>
+        <span className="label">REST API</span>
         <div className="copy-field">
           <span>http://127.0.0.1:{info.port}</span>
           <CopyButton value={`http://127.0.0.1:${info.port}`} />
         </div>
       </div>
       <div className="info-row">
-        <span className="label">访问 Token</span>
+        <span className="label">REST Token</span>
         <div className="copy-field">
           <span>{info.token}</span>
           <CopyButton value={info.token} />
-        </div>
-      </div>
-      <div className="info-row">
-        <span className="label">MCP 可执行文件</span>
-        <div className="copy-field">
-          <span>{serverPath}</span>
-          <CopyButton value={serverPath} />
         </div>
       </div>
       <div className="info-row">
@@ -394,50 +482,23 @@ export function McpDialog({ info, onClose }: { info: AppInfo | null; onClose: ()
         </div>
       </div>
 
-      <div>
-        <div className="field-label" style={{ marginBottom: 6 }}>
-          1. 在支持 MCP 的客户端配置（Claude Desktop / CodeBuddy / Cursor）
-        </div>
-        <pre className="import-textarea" style={{ minHeight: 130, margin: 0, overflow: 'auto' }}>
-          {mcpConfig}
-        </pre>
-        <div className="form-row" style={{ marginTop: 8 }}>
-          <button className="chip-button" onClick={() => navigator.clipboard.writeText(mcpConfig)}>
-            <Icon name="copy" size={12} />
-            复制 MCP 配置
-          </button>
-          <button className="chip-button" onClick={() => navigator.clipboard.writeText(serverPath)}>
-            <Icon name="terminal" size={12} />
-            复制可执行文件路径
-          </button>
-        </div>
-      </div>
-
-      <div>
-        <div className="field-label" style={{ marginBottom: 6 }}>
-          2. 或直接调用本地 REST API
-        </div>
-        <pre className="import-textarea" style={{ minHeight: 110, margin: 0, overflow: 'auto' }}>
-          {curlExample}
-        </pre>
-      </div>
-
       <div className="result-box">
-        <b>MCP 工具一览</b>
+        <b>可用工具（18 个）</b>
         <div className="result-list">
-          <div>import_api_document — 传入 OpenAPI、Postman、HAR、cURL 文本并入库</div>
-          <div>import_api_from_url — 从远程 URL 拉取接口文档并导入</div>
-          <div>list_collections / list_requests / get_request — 浏览已有接口</div>
-          <div>save_request / delete_request — 维护单个接口</div>
-          <div>export_collection — 导出为 Postman / OpenAPI / apiTools</div>
-          <div>send_request — 让 agent 直接验证接口</div>
+          <div>get_project_tree — 项目 / 集合 / 多级目录 / 接口结构</div>
+          <div>list_projects / switch_project / create_project — 项目管理</div>
+          <div>list_collections / create_collection / delete_collection — 集合管理</div>
+          <div>create_folder — 新建多级目录（用户中心/登录）</div>
+          <div>list_requests / get_request / save_request / delete_request — 接口维护</div>
+          <div>import_api_document / import_api_from_url — 文档导入</div>
+          <div>export_collection — 导出 Postman / OpenAPI / apiTools</div>
+          <div>list_environments / save_environment — 环境（URL 前缀 + 统一请求头）</div>
+          <div>send_request — 发请求验证，可套用环境</div>
         </div>
       </div>
     </Modal>
   );
 }
-
-/* -------------------------------- environment ------------------------------ */
 
 export function EnvDialog({
   environments,

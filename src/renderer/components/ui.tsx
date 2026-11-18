@@ -326,6 +326,29 @@ export function Select({
   );
 }
 
+export function Switch({
+  checked,
+  onChange,
+  disabled,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      className={`switch ${checked ? 'on' : ''}`}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+    >
+      <span className="switch-knob" />
+    </button>
+  );
+}
+
 export function CopyButton({ value, label = '复制', onDone }: { value: string; label?: string; onDone?: () => void }) {
   const [copied, setCopied] = React.useState(false);
   return (

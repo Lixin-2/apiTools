@@ -6,6 +6,7 @@ use apitools_core::{exporters, http_client, importers, model::*, store};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::Mutex;
 use tauri::{Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
@@ -37,9 +38,107 @@ fn mcp_server_path(app: &tauri::AppHandle) -> PathBuf {
     exe_dir.join("apitools-mcp")
 }
 
+/* ------------------------------ MCP HTTP server ----------------------------- */
+
+struct McpHandle {
+    port: u16,
+    shutdown: Option<tokio::sync::oneshot::Sender<()>>,
+}
+
+static MCP_RUNTIME: Mutex<Option<McpHandle>> = Mutex::new(None);
+
+fn stop_mcp_http() {
+    if let Ok(mut guard) = MCP_RUNTIME.lock() {
+        if let Some(mut handle) = guard.take() {
+            if let Some(tx) = handle.shutdown.take() {
+                let _ = tx.send(());
+            }
+        }
+    }
+}
+
+fn start_mcp_http(port: u16) -> Result<u16, String> {
+    let listener = std::net::TcpListener::bind(("127.0.0.1", port))
+        .map_err(|e| format!("端口 {port} 无法监听（可能被占用）：{e}"))?;
+    listener.set_nonblocking(true).map_err(|e| e.to_string())?;
+    let actual = listener.local_addr().map_err(|e| e.to_string())?.port();
+    let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+    let router = mcp_router();
+    tauri::async_runtime::spawn(async move {
+        match tokio::net::TcpListener::from_std(listener) {
+            Ok(listener) => {
+                let server = axum::serve(listener, router).with_graceful_shutdown(async {
+                    let _ = rx.await;
+                });
+                if let Err(err) = server.await {
+                    eprintln!("[apitools] MCP HTTP server error: {err}");
+                }
+            }
+            Err(err) => eprintln!("[apitools] MCP listener error: {err}"),
+        }
+    });
+    if let Ok(mut guard) = MCP_RUNTIME.lock() {
+        *guard = Some(McpHandle {
+            port: actual,
+            shutdown: Some(tx),
+        });
+    }
+    Ok(actual)
+}
+
+fn mcp_router() -> axum::Router {
+    use axum::{
+        http::StatusCode,
+        response::IntoResponse,
+        routing::{get, post},
+        Json, Router,
+    };
+
+    async fn mcp_post(Json(payload): Json<Value>) -> axum::response::Response {
+        let result =
+            tauri::async_runtime::spawn_blocking(move || apitools_core::mcp::handle_message(&payload))
+                .await
+                .ok()
+                .flatten();
+        match result {
+            Some(response) => (StatusCode::OK, Json(response)).into_response(),
+            None => StatusCode::ACCEPTED.into_response(),
+        }
+    }
+
+    async fn mcp_get() -> axum::response::Response {
+        (
+            StatusCode::METHOD_NOT_ALLOWED,
+            Json(json!({
+                "error": "请使用 POST /mcp 发送 JSON-RPC 请求",
+                "hint": "MCP 客户端配置：{ \"url\": \"http://127.0.0.1:4732/mcp\" }"
+            })),
+        )
+            .into_response()
+    }
+
+    async fn health() -> Json<Value> {
+        Json(json!({ "ok": true, "name": "apitools-mcp", "transport": "http" }))
+    }
+
+    Router::new()
+        .route("/mcp", post(mcp_post).get(mcp_get))
+        .route("/health", get(health))
+}
+
+fn mcp_running_port() -> Option<u16> {
+    MCP_RUNTIME
+        .lock()
+        .ok()
+        .and_then(|guard| guard.as_ref().map(|handle| handle.port))
+}
+
 #[tauri::command]
 fn app_info(app: tauri::AppHandle, rest: State<'_, RestInfo>) -> Value {
     let mcp = mcp_server_path(&app);
+    let settings = store::read_settings();
+    let running_port = mcp_running_port();
+    let http_port = running_port.unwrap_or(settings.mcp_port);
     json!({
         "name": "apiTools",
         "version": env!("CARGO_PKG_VERSION"),
@@ -49,8 +148,54 @@ fn app_info(app: tauri::AppHandle, rest: State<'_, RestInfo>) -> Value {
         "dataFile": store::data_file().to_string_lossy(),
         "mcpServerPath": mcp.to_string_lossy(),
         "mcpCommand": format!("{}", mcp.to_string_lossy()),
+        "mcpEnabled": settings.mcp_enabled,
+        "mcpRunning": running_port.is_some(),
+        "mcpPort": http_port,
+        "mcpHttpUrl": format!("http://127.0.0.1:{http_port}/mcp"),
         "engine": "rust"
     })
+}
+
+#[tauri::command]
+fn get_settings() -> Value {
+    let settings = store::read_settings();
+    let running_port = mcp_running_port();
+    json!({
+        "mcpEnabled": settings.mcp_enabled,
+        "mcpPort": running_port.unwrap_or(settings.mcp_port),
+        "mcpRunning": running_port.is_some(),
+        "mcpHttpUrl": format!("http://127.0.0.1:{}/mcp", running_port.unwrap_or(settings.mcp_port))
+    })
+}
+
+#[tauri::command]
+fn update_mcp_settings(enabled: bool, port: u16) -> Result<Value, String> {
+    let mut next = store::read_settings();
+    next.mcp_enabled = enabled;
+    if port > 0 {
+        next.mcp_port = port;
+    }
+
+    stop_mcp_http();
+
+    if enabled {
+        match start_mcp_http(next.mcp_port) {
+            Ok(actual) => next.mcp_port = actual,
+            Err(err) => {
+                next.mcp_enabled = false;
+                let _ = store::write_settings(&next);
+                return Err(err);
+            }
+        }
+    }
+
+    store::write_settings(&next)?;
+    Ok(json!({
+        "mcpEnabled": next.mcp_enabled,
+        "mcpPort": next.mcp_port,
+        "mcpRunning": enabled,
+        "mcpHttpUrl": format!("http://127.0.0.1:{}/mcp", next.mcp_port)
+    }))
 }
 
 #[tauri::command]
@@ -471,6 +616,8 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             app_info,
+            get_settings,
+            update_mcp_settings,
             read_workspace,
             create_project,
             rename_project,
@@ -525,6 +672,21 @@ fn main() {
             app.manage(RestInfo { port, token });
             let handle = app.handle().clone();
             watch_workspace(handle);
+
+            // 按设置自动启动 MCP HTTP 服务
+            let settings = store::read_settings();
+            if settings.mcp_enabled {
+                match start_mcp_http(settings.mcp_port) {
+                    Ok(port) => eprintln!("[apitools] MCP HTTP listening on 127.0.0.1:{port}/mcp"),
+                    Err(err) => {
+                        // 端口冲突时回退到系统分配端口，但保留用户配置，下次启动继续尝试
+                        eprintln!("[apitools] MCP 自动启动失败: {err}");
+                        if let Ok(port) = start_mcp_http(0) {
+                            eprintln!("[apitools] 已回退到随机端口 127.0.0.1:{port}/mcp");
+                        }
+                    }
+                }
+            }
 
             // 便于自动化冒烟测试：APITOOLS_SELFTEST=1 时自动点击一次「发送」
             if std::env::var("APITOOLS_SELFTEST").as_deref() == Ok("1") {

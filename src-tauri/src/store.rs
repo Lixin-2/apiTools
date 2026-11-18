@@ -654,6 +654,23 @@ pub fn replace_workspace(next: Workspace) -> Result<Workspace, String> {
 
 /* ----------------------------------- misc ---------------------------------- */
 
+pub fn settings_file() -> PathBuf {
+    data_dir().join("settings.json")
+}
+
+pub fn read_settings() -> AppSettings {
+    fs::read_to_string(settings_file())
+        .ok()
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+        .unwrap_or_default()
+}
+
+pub fn write_settings(settings: &AppSettings) -> Result<(), String> {
+    fs::create_dir_all(data_dir()).map_err(|e| format!("创建数据目录失败: {e}"))?;
+    let text = serde_json::to_string_pretty(settings).map_err(|e| e.to_string())?;
+    fs::write(settings_file(), text).map_err(|e| format!("写入设置失败: {e}"))
+}
+
 pub fn api_token() -> String {
     let file = data_dir().join("api-token");
     if let Ok(token) = fs::read_to_string(&file) {

@@ -3,9 +3,131 @@ use std::collections::BTreeMap;
 use std::io::Read;
 use std::time::{Duration, Instant};
 
-const MAX_BODY: u64 = 20 * 1024 * 1024;
+const MAX_BODY: u64 = 50 * 1024 * 1024;
+const PREVIEW_LIMIT: usize = 2 * 1024 * 1024;
 
-fn build_response(resp: ureq::Response, started: Instant) -> SendResponse {
+fn sanitize_filename(name: &str) -> String {
+    let cleaned: String = name
+        .chars()
+        .map(|ch| {
+            if ch.is_control() || matches!(ch, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') {
+                '_'
+            } else {
+                ch
+            }
+        })
+        .collect();
+    let trimmed = cleaned.trim().trim_matches('.').to_string();
+    if trimmed.is_empty() {
+        "response.bin".to_string()
+    } else {
+        trimmed
+    }
+}
+
+fn filename_from_headers(headers: &BTreeMap<String, String>, url: &str, mime: &str) -> String {
+    if let Some(disposition) = headers.get("content-disposition") {
+        let lower = disposition.to_lowercase();
+        if let Some(index) = lower.find("filename*=") {
+            let rest = &disposition[index + 10..];
+            let raw = rest.split(';').next().unwrap_or(rest).trim().trim_matches('"');
+            let decoded = raw.rsplit("''").next().unwrap_or(raw);
+            if !decoded.trim().is_empty() {
+                return sanitize_filename(decoded);
+            }
+        }
+        if let Some(index) = lower.find("filename=") {
+            let rest = &disposition[index + 9..];
+            let raw = rest.split(';').next().unwrap_or(rest).trim().trim_matches('"');
+            if !raw.trim().is_empty() {
+                return sanitize_filename(raw);
+            }
+        }
+    }
+    let no_query = url.split('?').next().unwrap_or(url);
+    let mut segments = no_query.trim_end_matches('/').rsplit('/');
+    let last = segments.next().unwrap_or("");
+    if !last.is_empty() && last.contains('.') {
+        return sanitize_filename(last);
+    }
+    // 形如 /image/png 的地址：把上一段当名字、最后一段当扩展名
+    let known_ext = [
+        "png", "jpg", "jpeg", "gif", "webp", "svg", "pdf", "zip", "csv", "txt", "json", "xml",
+        "bin", "xlsx", "docx", "mp4", "mp3",
+    ];
+    if known_ext.contains(&last.to_lowercase().as_str()) {
+        if let Some(previous) = segments.next() {
+            if !previous.is_empty() {
+                return format!("{}.{}", sanitize_filename(previous), last.to_lowercase());
+            }
+        }
+    }
+    let subtype = mime.split(';').next().unwrap_or(mime).rsplit('/').next().unwrap_or("bin");
+    let ext = match subtype {
+        "png" | "jpeg" | "jpg" | "gif" | "webp" | "pdf" | "zip" | "csv" => subtype,
+        "svg+xml" => "svg",
+        "plain" => "txt",
+        "octet-stream" | "msword" | "excel" | "spreadsheet" | "presentation" => "bin",
+        other if !other.is_empty() && !other.contains('+') => other,
+        _ => "bin",
+    };
+    format!("response-{}.{}", now_ms(), ext)
+}
+
+fn looks_like_text(content_type: &str, bytes: &[u8]) -> bool {
+    let ct = content_type.split(';').next().unwrap_or(content_type).trim();
+    if ct.starts_with("text/")
+        || ct.contains("json")
+        || ct.contains("xml")
+        || ct.contains("javascript")
+        || ct.contains("ecmascript")
+        || ct.contains("x-www-form-urlencoded")
+        || ct.contains("graphql")
+    {
+        return true;
+    }
+    if ct.starts_with("image/")
+        || ct.starts_with("video/")
+        || ct.starts_with("audio/")
+        || ct.starts_with("font/")
+        || ct.contains("octet-stream")
+        || ct.contains("pdf")
+        || ct.contains("zip")
+        || ct.contains("gzip")
+        || ct.contains("protobuf")
+        || ct.contains("spreadsheet")
+        || ct.contains("presentation")
+        || ct.contains("msword")
+        || ct.contains("excel")
+    {
+        return false;
+    }
+    if bytes.is_empty() {
+        return true;
+    }
+    let sample = &bytes[..bytes.len().min(4096)];
+    !sample.contains(&0) && std::str::from_utf8(sample).is_ok()
+}
+
+fn store_download(bytes: &[u8], file_name: &str) -> Option<String> {
+    let dir = std::env::temp_dir().join("apitools-downloads");
+    std::fs::create_dir_all(&dir).ok()?;
+    let path = dir.join(format!("{}-{}", now_ms(), sanitize_filename(file_name)));
+    std::fs::write(&path, bytes).ok()?;
+    Some(path.to_string_lossy().to_string())
+}
+
+fn image_preview(mime: &str, bytes: &[u8]) -> Option<String> {
+    use base64::Engine;
+    let ct = mime.split(';').next().unwrap_or(mime).trim();
+    if !ct.starts_with("image/") || bytes.len() > PREVIEW_LIMIT {
+        return None;
+    }
+    let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+    Some(format!("data:{ct};base64,{encoded}"))
+}
+
+fn build_response(resp: ureq::Response, started: Instant, url: &str) -> SendResponse {
     let status = resp.status();
     let status_text = resp.status_text().to_string();
     let mut headers: BTreeMap<String, String> = BTreeMap::new();
@@ -19,43 +141,81 @@ fn build_response(resp: ureq::Response, started: Instant) -> SendResponse {
         .cloned()
         .unwrap_or_default()
         .to_lowercase();
+    let mime = content_type
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_string();
 
     let mut bytes: Vec<u8> = Vec::new();
-    if let Err(err) = resp.into_reader().take(MAX_BODY).read_to_end(&mut bytes) {
-        return SendResponse::failure(format!("读取响应失败: {err}"), started.elapsed().as_millis() as u64);
+    if let Err(err) = resp
+        .into_reader()
+        .take(MAX_BODY + 1)
+        .read_to_end(&mut bytes)
+    {
+        return SendResponse::failure(
+            format!("读取响应失败: {err}"),
+            started.elapsed().as_millis() as u64,
+        );
+    }
+    let truncated = bytes.len() as u64 > MAX_BODY;
+    if truncated {
+        bytes.truncate(MAX_BODY as usize);
     }
     let size = bytes.len();
-    let text = String::from_utf8_lossy(&bytes).to_string();
-    let trimmed = text.trim_start();
-    let is_json = content_type.contains("json")
-        || trimmed.starts_with('{')
-        || trimmed.starts_with('[');
-    let is_binary = content_type.starts_with("image/")
-        || content_type.starts_with("video/")
-        || content_type.starts_with("audio/")
-        || content_type.starts_with("font/")
-        || content_type.contains("octet-stream")
-        || content_type.contains("application/pdf")
-        || content_type.contains("application/zip");
-
-    let (body, body_kind) = if is_binary && !is_json {
-        (format!("[binary {size} bytes]"), "binary")
-    } else if is_json {
-        (text, "json")
+    let time_ms = started.elapsed().as_millis() as u64;
+    let ok = (200..400).contains(&status);
+    let warning = if truncated {
+        Some(format!(
+            "响应超过 {} MB，已截断",
+            MAX_BODY / 1024 / 1024
+        ))
     } else {
-        (text, "text")
+        None
     };
 
+    // 文本 / JSON 直接返回内容；二进制落到临时文件并给出下载信息
+    if looks_like_text(&content_type, &bytes) {
+        let text = String::from_utf8_lossy(&bytes).to_string();
+        let trimmed = text.trim_start();
+        let is_json = content_type.contains("json")
+            || trimmed.starts_with('{')
+            || trimmed.starts_with('[');
+        return SendResponse {
+            ok,
+            status,
+            status_text,
+            headers,
+            body: text,
+            body_kind: if is_json { "json".to_string() } else { "text".to_string() },
+            size,
+            time_ms,
+            error: warning,
+            file_path: None,
+            file_name: None,
+            mime: Some(mime).filter(|value| !value.is_empty()),
+            preview: None,
+        };
+    }
+
+    let file_name = filename_from_headers(&headers, url, &mime);
+    let file_path = store_download(&bytes, &file_name);
+    let preview = image_preview(&mime, &bytes);
     SendResponse {
-        ok: (200..400).contains(&status),
+        ok,
         status,
         status_text,
         headers,
-        body,
-        body_kind: body_kind.to_string(),
+        body: String::new(),
+        body_kind: "binary".to_string(),
         size,
-        time_ms: started.elapsed().as_millis() as u64,
-        error: None,
+        time_ms,
+        error: warning,
+        file_path,
+        file_name: Some(file_name),
+        mime: Some(mime).filter(|value| !value.is_empty()),
+        preview,
     }
 }
 
@@ -159,8 +319,8 @@ fn send_bytes(
         }
     }
     match request.send_bytes(&payload) {
-        Ok(resp) => build_response(resp, started),
-        Err(ureq::Error::Status(_code, resp)) => build_response(resp, started),
+        Ok(resp) => build_response(resp, started, url),
+        Err(ureq::Error::Status(_code, resp)) => build_response(resp, started, url),
         Err(err) => SendResponse::failure(err.to_string(), started.elapsed().as_millis() as u64),
     }
 }
@@ -222,8 +382,8 @@ pub fn execute(
     };
 
     match result {
-        Ok(resp) => build_response(resp, started),
-        Err(ureq::Error::Status(_code, resp)) => build_response(resp, started),
+        Ok(resp) => build_response(resp, started, url),
+        Err(ureq::Error::Status(_code, resp)) => build_response(resp, started, url),
         Err(err) => SendResponse::failure(
             {
                 let text = err.to_string();

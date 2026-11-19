@@ -71,6 +71,17 @@ export interface ApiToolsApi {
     timeoutMs?: number;
   }): Promise<SendResponse>;
   pickFile(): Promise<{ path: string; name: string; size: number } | null>;
+  saveResponseFile(payload: {
+    sourcePath?: string;
+    content?: string;
+    fileName: string;
+  }): Promise<string | null>;
+  downloadResponseFile(payload: {
+    sourcePath?: string;
+    content?: string;
+    fileName: string;
+  }): Promise<string>;
+  revealPath(path: string): Promise<void>;
   importText(payload: {
     content: string;
     format?: ImportFormat;

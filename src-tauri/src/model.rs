@@ -439,6 +439,16 @@ pub struct SendResponse {
     pub time_ms: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// 二进制响应落盘后的临时文件路径
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mime: Option<String>,
+    /// 小图片的 data URL 预览
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview: Option<String>,
 }
 
 impl SendResponse {
@@ -453,6 +463,10 @@ impl SendResponse {
             size: 0,
             time_ms,
             error: Some(message.into()),
+            file_path: None,
+            file_name: None,
+            mime: None,
+            preview: None,
         }
     }
 }

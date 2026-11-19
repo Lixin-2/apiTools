@@ -419,6 +419,110 @@ async fn send_request(payload: Value) -> Result<Value, String> {
     serde_json::to_value(response).map_err(|e| e.to_string())
 }
 
+/// 保存响应内容（二进制来自临时文件，文本直接写入），弹出保存对话框
+#[tauri::command]
+async fn save_response_file(
+    app: tauri::AppHandle,
+    source_path: Option<String>,
+    content: Option<String>,
+    file_name: String,
+) -> Result<Option<String>, String> {
+    let target_name = if file_name.trim().is_empty() {
+        "response".to_string()
+    } else {
+        file_name
+    };
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog()
+            .file()
+            .set_title("保存响应")
+            .set_file_name(&target_name)
+            .blocking_save_file()
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    let Some(target) = picked else {
+        return Ok(None);
+    };
+    let path = target.into_path().map_err(|e| e.to_string())?;
+    if let Some(source) = source_path {
+        std::fs::copy(&source, &path).map_err(|e| format!("保存失败: {e}"))?;
+    } else if let Some(text) = content {
+        std::fs::write(&path, text).map_err(|e| format!("保存失败: {e}"))?;
+    }
+    Ok(Some(path.to_string_lossy().to_string()))
+}
+
+/// 直接下载到 ~/Downloads，重名自动加序号
+#[tauri::command]
+fn download_response_file(
+    source_path: Option<String>,
+    content: Option<String>,
+    file_name: String,
+) -> Result<String, String> {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    let dir = PathBuf::from(home).join("Downloads");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("创建下载目录失败: {e}"))?;
+    let base = if file_name.trim().is_empty() {
+        "response.bin".to_string()
+    } else {
+        file_name.trim().to_string()
+    };
+    let mut target = dir.join(&base);
+    if target.exists() {
+        let stem = base.rsplit_once('.').map(|(head, _)| head).unwrap_or(&base);
+        let ext = base
+            .rsplit_once('.')
+            .map(|(_, tail)| format!(".{tail}"))
+            .unwrap_or_default();
+        for index in 1..1000 {
+            let candidate = dir.join(format!("{stem} ({index}){ext}"));
+            if !candidate.exists() {
+                target = candidate;
+                break;
+            }
+        }
+    }
+    if let Some(source) = source_path {
+        std::fs::copy(&source, &target).map_err(|e| format!("保存失败: {e}"))?;
+    } else if let Some(text) = content {
+        std::fs::write(&target, text).map_err(|e| format!("保存失败: {e}"))?;
+    }
+    Ok(target.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn reveal_path(path: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("-R")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg("/select,")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let parent = std::path::Path::new(&path)
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
+        std::process::Command::new("xdg-open")
+            .arg(parent)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 async fn pick_file(app: tauri::AppHandle) -> Result<Option<Value>, String> {
     let picked = tauri::async_runtime::spawn_blocking(move || {
@@ -756,6 +860,9 @@ fn main() {
             get_request,
             send_request,
             pick_file,
+            save_response_file,
+            download_response_file,
+            reveal_path,
             import_text,
             import_file,
             export_collection,

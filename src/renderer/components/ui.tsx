@@ -128,6 +128,12 @@ const icons: Record<string, React.ReactNode> = {
       <path d="M11.2 12H20M17 12v3M14.5 12v2.2" />
     </>
   ),
+  file: (
+    <>
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z" />
+      <path d="M14 3v5h5" />
+    </>
+  ),
   layers: (
     <>
       <path d="m12 4 8 4.5-8 4.5-8-4.5L12 4Z" />

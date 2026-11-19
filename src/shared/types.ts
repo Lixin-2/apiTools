@@ -155,6 +155,12 @@ export interface SendResponse {
   size: number;
   timeMs: number;
   error?: string;
+  /** 二进制响应落盘后的临时文件路径 */
+  filePath?: string;
+  fileName?: string;
+  mime?: string;
+  /** 小图片的 data URL 预览 */
+  preview?: string;
 }
 
 export type ImportFormat = 'openapi' | 'postman' | 'har' | 'curl' | 'apitools';

@@ -52,6 +52,7 @@ name = "apitools"
 version = "1.0.0"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "notify",
  "objc2",
  "objc2-app-kit",

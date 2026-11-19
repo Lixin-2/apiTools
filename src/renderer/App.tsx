@@ -22,7 +22,7 @@ import {
   McpDialog,
   Modal,
 } from './components/Dialogs';
-import { AppMark, Icon, Select } from './components/ui';
+import { AppMark, Icon, METHOD_COLORS, Select } from './components/ui';
 
 type DialogKey = 'import' | 'mcp' | 'env' | null;
 type ThemeMode = 'light' | 'dark' | 'system';
@@ -44,13 +44,131 @@ function envVarsOf(env: Environment | undefined): Record<string, string> {
   return vars;
 }
 
+interface RequestTab {
+  id: string;
+  draft: ApiRequest;
+  saved: string;
+  response: SendResponse | null;
+  sending: boolean;
+}
+
+const TABS_KEY = 'apitools-tabs';
+const MAX_TABS = 12;
+const TABS_VERSION = 2;
+
+function isTabDirty(tab: RequestTab): boolean {
+  try {
+    return stableStringify(tab.draft) !== stableStringify(JSON.parse(tab.saved));
+  } catch {
+    return true;
+  }
+}
+
+/** 稳定序列化：忽略对象键顺序，用于判断「是否有未保存修改」 */
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableStringify).join(',')}]`;
+  }
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value as Record<string, unknown>)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableStringify((value as Record<string, unknown>)[key])}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
+function loadTabs(): RequestTab[] {
+  try {
+    const raw = localStorage.getItem(TABS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as {
+      version?: number;
+      tabs?: { id: string; draft: ApiRequest; saved?: string }[];
+    };
+    // 旧版没有版本号，saved 与 draft 的序列化方式不同，直接视为已保存
+    const trusted = (parsed.version ?? 1) >= TABS_VERSION;
+    return (parsed.tabs ?? [])
+      .filter((tab) => tab?.id && tab?.draft)
+      .map((tab) => ({
+        id: tab.id,
+        draft: tab.draft,
+        saved: trusted && tab.saved ? tab.saved : stableStringify(tab.draft),
+        response: null,
+        sending: false,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function loadActiveTabId(): string | null {
+  try {
+    return (JSON.parse(localStorage.getItem(TABS_KEY) ?? '{}') as { activeTabId?: string })
+      .activeTabId ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function TabBar({
+  tabs,
+  activeId,
+  onActivate,
+  onClose,
+}: {
+  tabs: RequestTab[];
+  activeId: string | null;
+  onActivate: (id: string) => void;
+  onClose: (id: string) => void;
+}) {
+  if (!tabs.length) return null;
+  return (
+    <div className="req-tabs">
+      <div className="req-tabs-scroll">
+        {tabs.map((tab) => {
+          const tabDirty = isTabDirty(tab);
+          return (
+            <div
+              key={tab.id}
+              className={`req-tab ${tab.id === activeId ? 'active' : ''}`}
+              onClick={() => onActivate(tab.id)}
+              onAuxClick={(event) => {
+                if (event.button === 1) onClose(tab.id);
+              }}
+              title={`${tab.draft.method} ${tab.draft.url || tab.draft.name}`}
+            >
+              <span
+                className="req-tab-method"
+                style={{ color: METHOD_COLORS[tab.draft.method] ?? 'var(--text-dim)' }}
+              >
+                {tab.draft.method}
+              </span>
+              <span className="req-tab-name">{tab.draft.name || '未命名'}</span>
+              {tabDirty && <span className="req-tab-dirty" title="有未保存修改" />}
+              <button
+                className="req-tab-close"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onClose(tab.id);
+                }}
+                title="关闭标签"
+              >
+                <Icon name="close" size={10} />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [info, setInfo] = React.useState<AppInfo | null>(null);
   const [workspace, setWorkspace] = React.useState<Workspace | null>(null);
-  const [draft, setDraft] = React.useState<ApiRequest | null>(null);
-  const [savedSnapshot, setSavedSnapshot] = React.useState('');
-  const [response, setResponse] = React.useState<SendResponse | null>(null);
-  const [sending, setSending] = React.useState(false);
+  const [tabs, setTabs] = React.useState<RequestTab[]>(loadTabs);
+  const [activeTabId, setActiveTabId] = React.useState<string | null>(loadActiveTabId);
   const [dialog, setDialog] = React.useState<DialogKey>(null);
   const [exportTarget, setExportTarget] = React.useState<Collection | null>(null);
 
@@ -146,32 +264,68 @@ export default function App() {
     reload().then((ws) => {
       if (bootstrapped.current) return;
       bootstrapped.current = true;
-      const first = ws.requests[0];
-      if (first) {
-        setDraft(first);
-        setSavedSnapshot(JSON.stringify(first));
-      }
+      // 只保留属于当前项目、且仍然存在的标签
+      setTabs((prev) => {
+        const valid = prev.filter(
+          (tab) =>
+            ws.requests.some((request) => request.id === tab.id) &&
+            ws.collections.some((collection) => collection.id === tab.draft.collectionId),
+        );
+        if (valid.length) {
+          setActiveTabId((current) =>
+            current && valid.some((tab) => tab.id === current)
+              ? current
+              : valid[valid.length - 1].id,
+          );
+          return valid;
+        }
+        const first = ws.requests[0];
+        if (!first) return [];
+        setActiveTabId(first.id);
+        return [{ id: first.id, draft: first, saved: stableStringify(first), response: null, sending: false }];
+      });
     });
     const off = window.api.onWorkspaceChanged(() => {
       reload().then((ws) => {
-        setDraft((current) => {
-          if (!current) return current;
-          const fresh = ws.requests.find((r) => r.id === current.id);
-          if (!fresh) return current;
-          const currentDirty = JSON.stringify(current) !== savedSnapshotRef.current;
-          if (currentDirty) return current;
-          setSavedSnapshot(JSON.stringify(fresh));
-          return fresh;
-        });
+        setTabs((prev) =>
+          prev.map((tab) => {
+            const fresh = ws.requests.find((request) => request.id === tab.id);
+            if (!fresh) return tab;
+            // 有未保存修改的标签不被外部数据覆盖
+            if (isTabDirty(tab)) return tab;
+            return { ...tab, draft: fresh, saved: stableStringify(fresh) };
+          }),
+        );
       });
     });
     return off;
   }, [reload]);
 
-  const savedSnapshotRef = React.useRef('');
+  // 标签草稿持久化（响应体太大，不落盘）
   React.useEffect(() => {
-    savedSnapshotRef.current = savedSnapshot;
-  }, [savedSnapshot]);
+    try {
+      localStorage.setItem(
+        TABS_KEY,
+        JSON.stringify({
+          version: TABS_VERSION,
+          activeTabId,
+          tabs: tabs.map((tab) => ({
+            id: tab.id,
+            draft: tab.draft,
+            saved: stableStringify(tab.draft),
+          })),
+        }),
+      );
+    } catch {
+      /* 忽略配额错误 */
+    }
+  }, [tabs, activeTabId]);
+
+  const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? null;
+  const draft = activeTab?.draft ?? null;
+  const response = activeTab?.response ?? null;
+  const sending = activeTab?.sending ?? false;
+  const dirty = activeTab ? isTabDirty(activeTab) : false;
 
   const activeEnv = workspace?.environments.find((e) => e.id === workspace.activeEnvironmentId);
   const envBaseUrl = (activeEnv?.baseUrl ?? '').trim();
@@ -184,23 +338,66 @@ export default function App() {
     return `${envBaseUrl.replace(/\/+$/, '')}/${url.replace(/^\/+/, '')}`;
   }, [draft?.url, envBaseUrl]);
 
-  const dirty = draft ? JSON.stringify(draft) !== savedSnapshot : false;
+  const patchTab = (id: string | null, patch: Partial<RequestTab>) => {
+    if (!id) return;
+    setTabs((prev) => prev.map((tab) => (tab.id === id ? { ...tab, ...patch } : tab)));
+  };
 
   const openRequest = (req: ApiRequest) => {
-    setDraft(req);
-    setSavedSnapshot(JSON.stringify(req));
-    setResponse(null);
+    setTabs((prev) => {
+      const existing = prev.find((tab) => tab.id === req.id);
+      if (existing) {
+        const tabDirty = isTabDirty(existing);
+        return prev.map((tab) =>
+          tab.id === req.id
+            ? {
+                ...tab,
+                draft: tabDirty ? tab.draft : req,
+                saved: tabDirty ? tab.saved : JSON.stringify(req),
+              }
+            : tab,
+        );
+      }
+      const next = [
+        ...prev,
+        { id: req.id, draft: req, saved: stableStringify(req), response: null, sending: false },
+      ];
+      return next.length > MAX_TABS ? next.slice(next.length - MAX_TABS) : next;
+    });
+    setActiveTabId(req.id);
+  };
+
+  const closeTab = (id: string) => {
+    const index = tabs.findIndex((tab) => tab.id === id);
+    const next = tabs.filter((tab) => tab.id !== id);
+    setTabs(next);
+    if (activeTabId === id) {
+      setActiveTabId(next[Math.min(index, next.length - 1)]?.id ?? null);
+    }
+  };
+
+  const resetTabs = (first: ApiRequest | null) => {
+    setTabs(
+      first
+        ? [{ id: first.id, draft: first, saved: stableStringify(first), response: null, sending: false }]
+        : [],
+    );
+    setActiveTabId(first?.id ?? null);
   };
 
   const updateDraft = (patch: Partial<ApiRequest>) => {
-    setDraft((prev) => (prev ? { ...prev, ...patch } : prev));
+    if (!activeTabId) return;
+    setTabs((prev) =>
+      prev.map((tab) =>
+        tab.id === activeTabId ? { ...tab, draft: { ...tab.draft, ...patch } } : tab,
+      ),
+    );
   };
 
   const saveDraft = async (silent = false) => {
     if (!draft) return;
     const saved = await window.api.saveRequest(draft);
-    setDraft(saved);
-    setSavedSnapshot(JSON.stringify(saved));
+    patchTab(draft.id, { draft: saved, saved: stableStringify(saved) });
     await reload();
     if (!silent) showToast('已保存到本地');
     return saved;
@@ -253,16 +450,24 @@ export default function App() {
         try {
           await window.api.renameFolder(collection.id, folder, nextPath);
           await reload();
-          if (draft?.collectionId === collection.id) {
-            if (draft.folder === folder) {
-              setDraft({ ...draft, folder: nextPath });
-            } else if (draft.folder.startsWith(`${folder}/`)) {
-              setDraft({
-                ...draft,
-                folder: `${nextPath}/${draft.folder.slice(folder.length + 1)}`,
-              });
-            }
-          }
+          setTabs((prev) =>
+            prev.map((tab) => {
+              if (tab.draft.collectionId !== collection.id) return tab;
+              if (tab.draft.folder === folder) {
+                return { ...tab, draft: { ...tab.draft, folder: nextPath } };
+              }
+              if (tab.draft.folder.startsWith(`${folder}/`)) {
+                return {
+                  ...tab,
+                  draft: {
+                    ...tab.draft,
+                    folder: `${nextPath}/${tab.draft.folder.slice(folder.length + 1)}`,
+                  },
+                };
+              }
+              return tab;
+            }),
+          );
           showToast('目录已重命名');
         } catch (error: any) {
           showToast(error?.message ?? String(error));
@@ -276,10 +481,7 @@ export default function App() {
     if (!id || workspace?.activeProjectId === id) return;
     await window.api.setActiveProject(id);
     const ws = await reload();
-    const first = ws.requests[0] ?? null;
-    setDraft(first);
-    setSavedSnapshot(first ? JSON.stringify(first) : '');
-    setResponse(null);
+    resetTabs(ws.requests[0] ?? null);
     showToast(`已切换到项目「${ws.projects.find((p) => p.id === id)?.name ?? ''}」`);
   };
 
@@ -292,10 +494,7 @@ export default function App() {
         if (!name) return;
         await window.api.createProject(name);
         const ws = await reload();
-        const first = ws.requests[0] ?? null;
-        setDraft(first);
-        setSavedSnapshot(first ? JSON.stringify(first) : '');
-        setResponse(null);
+        resetTabs(ws.requests[0] ?? null);
         showToast(`项目「${name}」已创建`);
       },
       '项目名称，例如「电商后台」',
@@ -324,10 +523,7 @@ export default function App() {
     try {
       await window.api.deleteProject(id);
       const ws = await reload();
-      const first = ws.requests[0] ?? null;
-      setDraft(first);
-      setSavedSnapshot(first ? JSON.stringify(first) : '');
-      setResponse(null);
+      resetTabs(ws.requests[0] ?? null);
       showToast('项目已删除');
     } catch (error: any) {
       showToast(error?.message ?? String(error));
@@ -338,16 +534,21 @@ export default function App() {
     if (!window.confirm(`删除目录「${folder}」及其子目录？目录内的接口会移到集合根级，不会被删除。`)) return;
     await window.api.deleteFolder(collection.id, folder);
     await reload();
-    if (draft?.collectionId === collection.id && draft.folder === folder) {
-      setDraft({ ...draft, folder: '' });
-    }
+    setTabs((prev) =>
+      prev.map((tab) =>
+        tab.draft.collectionId === collection.id &&
+        (tab.draft.folder === folder || tab.draft.folder.startsWith(`${folder}/`))
+          ? { ...tab, draft: { ...tab.draft, folder: '' } }
+          : tab,
+      ),
+    );
     showToast('目录已删除');
   };
 
   const send = async () => {
     if (!draft || sending) return;
-    setSending(true);
-    setResponse(null);
+    const tabId = activeTabId;
+    patchTab(tabId, { sending: true, response: null });
     try {
       const vars: Record<string, string> = {};
       let url = draft.url.trim();
@@ -415,21 +616,23 @@ export default function App() {
         body: draft.bodyType === 'none' || draft.bodyType === 'form' ? '' : body,
         formFields: draft.bodyType === 'form' ? draft.formFields ?? [] : undefined,
       });
-      setResponse(result);
+      patchTab(tabId, { response: result });
     } catch (error: any) {
-      setResponse({
-        ok: false,
-        status: 0,
-        statusText: '',
-        headers: {},
-        body: '',
-        bodyKind: 'text',
-        size: 0,
-        timeMs: 0,
-        error: error?.message ?? String(error),
+      patchTab(tabId, {
+        response: {
+          ok: false,
+          status: 0,
+          statusText: '',
+          headers: {},
+          body: '',
+          bodyKind: 'text',
+          size: 0,
+          timeMs: 0,
+          error: error?.message ?? String(error),
+        },
       });
     } finally {
-      setSending(false);
+      patchTab(tabId, { sending: false });
     }
   };
 
@@ -442,6 +645,10 @@ export default function App() {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault();
         send();
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'w' && activeTabId) {
+        e.preventDefault();
+        closeTab(activeTabId);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -578,21 +785,19 @@ export default function App() {
           onDeleteRequest={async (id) => {
             if (!window.confirm('确定删除这个接口吗？此操作不可撤销。')) return;
             await window.api.deleteRequest(id);
-            if (draft?.id === id) {
-              setDraft(null);
-              setSavedSnapshot('');
-            }
             await reload();
+            closeTab(id);
             showToast('接口已删除');
           }}
           onDeleteCollection={async (id) => {
             if (!window.confirm('删除集合会同时删除其中所有接口，确定继续吗？')) return;
             await window.api.deleteCollection(id);
-            if (draft?.collectionId === id) {
-              setDraft(null);
-              setSavedSnapshot('');
-            }
             await reload();
+            const remaining = tabs.filter((tab) => tab.draft.collectionId !== id);
+            setTabs(remaining);
+            if (!remaining.some((tab) => tab.id === activeTabId)) {
+              setActiveTabId(remaining[remaining.length - 1]?.id ?? null);
+            }
             showToast('集合已删除');
           }}
           onRenameCollection={(collection) =>
@@ -616,6 +821,12 @@ export default function App() {
         <main className="main" ref={mainRef}>
           {draft ? (
             <>
+              <TabBar
+                tabs={tabs}
+                activeId={activeTabId}
+                onActivate={setActiveTabId}
+                onClose={closeTab}
+              />
               <div className="editor-pane" style={{ height: editorHeight }}>
               <RequestEditor
                 draft={draft}

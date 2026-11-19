@@ -74,39 +74,87 @@ fn filename_from_headers(headers: &BTreeMap<String, String>, url: &str, mime: &s
     format!("response-{}.{}", now_ms(), ext)
 }
 
-fn looks_like_text(content_type: &str, bytes: &[u8]) -> bool {
+fn is_binary_mime(content_type: &str) -> bool {
     let ct = content_type.split(';').next().unwrap_or(content_type).trim();
-    if ct.starts_with("text/")
+    if ct.is_empty() {
+        return false;
+    }
+    if ct.starts_with("image/") && !ct.contains("svg") {
+        return true;
+    }
+    if ct.starts_with("audio/") || ct.starts_with("video/") || ct.starts_with("font/") {
+        return true;
+    }
+    const HINTS: [&str; 16] = [
+        "octet-stream",
+        "officedocument",
+        "ms-excel",
+        "ms-word",
+        "ms-powerpoint",
+        "spreadsheetml",
+        "wordprocessingml",
+        "presentationml",
+        "pdf",
+        "zip",
+        "gzip",
+        "x-rar",
+        "x-7z",
+        "x-tar",
+        "protobuf",
+        "wasm",
+    ];
+    HINTS.iter().any(|hint| ct.contains(hint))
+}
+
+fn is_text_mime(content_type: &str) -> bool {
+    let ct = content_type.split(';').next().unwrap_or(content_type).trim();
+    ct.starts_with("text/")
         || ct.contains("json")
-        || ct.contains("xml")
+        || ct == "application/xml"
+        || ct.ends_with("+xml")
         || ct.contains("javascript")
         || ct.contains("ecmascript")
         || ct.contains("x-www-form-urlencoded")
         || ct.contains("graphql")
-    {
-        return true;
-    }
-    if ct.starts_with("image/")
-        || ct.starts_with("video/")
-        || ct.starts_with("audio/")
-        || ct.starts_with("font/")
-        || ct.contains("octet-stream")
-        || ct.contains("pdf")
-        || ct.contains("zip")
-        || ct.contains("gzip")
-        || ct.contains("protobuf")
-        || ct.contains("spreadsheet")
-        || ct.contains("presentation")
-        || ct.contains("msword")
-        || ct.contains("excel")
-    {
+        || ct.contains("csv")
+        || ct.contains("yaml")
+}
+
+fn has_binary_magic(bytes: &[u8]) -> bool {
+    const SIGS: [&[u8]; 11] = [
+        b"PK\x03\x04",
+        b"PK\x05\x06",
+        b"%PDF",
+        b"\x89PNG",
+        b"GIF8",
+        b"\xFF\xD8\xFF",
+        b"RIFF",
+        b"OggS",
+        b"\x1f\x8b",
+        b"\xD0\xCF\x11\xE0",
+        b"BM",
+    ];
+    SIGS.iter().any(|sig| bytes.starts_with(sig))
+}
+
+fn looks_like_text(content_type: &str, bytes: &[u8]) -> bool {
+    // 1) 明确的二进制类型优先（Excel/Word/PPT 的 MIME 里带 xml，不能先判文本）
+    if is_binary_mime(content_type) {
         return false;
     }
+    // 2) 明确的文本类型
+    if is_text_mime(content_type) {
+        return true;
+    }
+    // 3) 没有可信 content-type 时看文件头
+    if has_binary_magic(bytes) {
+        return false;
+    }
+    // 4) 最后用严格 UTF-8 校验
     if bytes.is_empty() {
         return true;
     }
-    let sample = &bytes[..bytes.len().min(4096)];
-    !sample.contains(&0) && std::str::from_utf8(sample).is_ok()
+    std::str::from_utf8(bytes).is_ok()
 }
 
 fn store_download(bytes: &[u8], file_name: &str) -> Option<String> {

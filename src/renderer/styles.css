@@ -1612,6 +1612,9 @@ body.resizing-row * {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .metric b {
   color: var(--text-dim);

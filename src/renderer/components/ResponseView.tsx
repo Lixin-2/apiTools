@@ -121,11 +121,16 @@ export default function ResponseView({ response, sending }: Props) {
     ? response.fileName
     : `response-${response.status || 'body'}.${response.bodyKind === 'json' ? 'json' : 'txt'}`;
 
-  const savePayload = () => ({
-    sourcePath: response.filePath,
-    content: response.filePath ? undefined : response.bodyKind === 'json' ? pretty : response.body,
-    fileName: defaultFileName,
-  });
+  const savePayload = () => {
+    if (response.bodyKind === 'binary' && !response.filePath) {
+      throw new Error('响应文件未落盘，请重新发送请求');
+    }
+    return {
+      sourcePath: response.filePath,
+      content: response.filePath ? undefined : response.bodyKind === 'json' ? pretty : response.body,
+      fileName: defaultFileName,
+    };
+  };
 
   const download = async () => {
     try {

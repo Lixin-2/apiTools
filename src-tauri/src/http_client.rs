@@ -6,6 +6,32 @@ use std::time::{Duration, Instant};
 const MAX_BODY: u64 = 50 * 1024 * 1024;
 const PREVIEW_LIMIT: usize = 2 * 1024 * 1024;
 
+/// 解码 %XX 与 +（Content-Disposition 与路径里常见）
+fn percent_decode(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' && index + 2 < bytes.len() {
+            if let Ok(hex) = std::str::from_utf8(&bytes[index + 1..index + 3]) {
+                if let Ok(value) = u8::from_str_radix(hex, 16) {
+                    out.push(value);
+                    index += 3;
+                    continue;
+                }
+            }
+        }
+        if bytes[index] == b'+' {
+            out.push(b' ');
+            index += 1;
+            continue;
+        }
+        out.push(bytes[index]);
+        index += 1;
+    }
+    String::from_utf8_lossy(&out).to_string()
+}
+
 fn sanitize_filename(name: &str) -> String {
     let cleaned: String = name
         .chars()
@@ -32,15 +58,17 @@ fn filename_from_headers(headers: &BTreeMap<String, String>, url: &str, mime: &s
             let rest = &disposition[index + 10..];
             let raw = rest.split(';').next().unwrap_or(rest).trim().trim_matches('"');
             let decoded = raw.rsplit("''").next().unwrap_or(raw);
+            let decoded = percent_decode(decoded);
             if !decoded.trim().is_empty() {
-                return sanitize_filename(decoded);
+                return sanitize_filename(&decoded);
             }
         }
         if let Some(index) = lower.find("filename=") {
             let rest = &disposition[index + 9..];
             let raw = rest.split(';').next().unwrap_or(rest).trim().trim_matches('"');
-            if !raw.trim().is_empty() {
-                return sanitize_filename(raw);
+            let decoded = percent_decode(raw);
+            if !decoded.trim().is_empty() {
+                return sanitize_filename(&decoded);
             }
         }
     }
@@ -48,7 +76,7 @@ fn filename_from_headers(headers: &BTreeMap<String, String>, url: &str, mime: &s
     let mut segments = no_query.trim_end_matches('/').rsplit('/');
     let last = segments.next().unwrap_or("");
     if !last.is_empty() && last.contains('.') {
-        return sanitize_filename(last);
+        return sanitize_filename(&percent_decode(last));
     }
     // 形如 /image/png 的地址：把上一段当名字、最后一段当扩展名
     let known_ext = [
@@ -58,7 +86,11 @@ fn filename_from_headers(headers: &BTreeMap<String, String>, url: &str, mime: &s
     if known_ext.contains(&last.to_lowercase().as_str()) {
         if let Some(previous) = segments.next() {
             if !previous.is_empty() {
-                return format!("{}.{}", sanitize_filename(previous), last.to_lowercase());
+                return format!(
+                    "{}.{}",
+                    sanitize_filename(&percent_decode(previous)),
+                    last.to_lowercase()
+                );
             }
         }
     }

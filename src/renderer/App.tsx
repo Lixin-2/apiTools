@@ -122,10 +122,58 @@ function TabBar({
   onActivate: (id: string) => void;
   onClose: (id: string) => void;
 }) {
+  const scrollRef = React.useRef<HTMLDivElement>(null);
+  const [overflow, setOverflow] = React.useState(false);
+
+  // 标签总宽度超过容器时显示左右切换按钮
+  React.useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    const check = () => setOverflow(element.scrollWidth > element.clientWidth + 1);
+    check();
+    const observer = new ResizeObserver(check);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [tabs.length]);
+
+  // 鼠标滚轮横向滚动
+  React.useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    const onWheel = (event: WheelEvent) => {
+      if (element.scrollWidth <= element.clientWidth + 1) return;
+      if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
+        element.scrollLeft += event.deltaY;
+        event.preventDefault();
+      }
+    };
+    element.addEventListener('wheel', onWheel, { passive: false });
+    return () => element.removeEventListener('wheel', onWheel);
+  }, []);
+
+  // 激活标签自动滚到可见区域
+  React.useEffect(() => {
+    const active = scrollRef.current?.querySelector('.req-tab.active') as HTMLElement | null;
+    active?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+  }, [activeId, tabs.length]);
+
   if (!tabs.length) return null;
+
+  const scrollBy = (delta: number) =>
+    scrollRef.current?.scrollBy({ left: delta, behavior: 'smooth' });
+
   return (
     <div className="req-tabs">
-      <div className="req-tabs-scroll">
+      {overflow && (
+        <button
+          className="tab-scroll-btn"
+          title="向左滚动标签"
+          onClick={() => scrollBy(-180)}
+        >
+          <Icon name="chevron" size={11} style={{ transform: 'rotate(180deg)' }} />
+        </button>
+      )}
+      <div className="req-tabs-scroll" ref={scrollRef}>
         {tabs.map((tab) => {
           const tabDirty = isTabDirty(tab);
           return (
@@ -160,6 +208,11 @@ function TabBar({
           );
         })}
       </div>
+      {overflow && (
+        <button className="tab-scroll-btn" title="向右滚动标签" onClick={() => scrollBy(180)}>
+          <Icon name="chevron" size={11} />
+        </button>
+      )}
     </div>
   );
 }

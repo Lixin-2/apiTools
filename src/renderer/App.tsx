@@ -367,9 +367,21 @@ export default function App() {
     setActiveTabId(req.id);
   };
 
-  const closeTab = (id: string) => {
-    const index = tabs.findIndex((tab) => tab.id === id);
-    const next = tabs.filter((tab) => tab.id !== id);
+  const closeTab = async (id: string) => {
+    const tab = tabs.find((item) => item.id === id);
+    // 有未保存修改时先落盘，避免误关标签丢内容
+    if (tab && isTabDirty(tab)) {
+      try {
+        await window.api.saveRequest(tab.draft);
+        await reload();
+        showToast(`已保存「${tab.draft.name || '未命名'}」并关闭标签`);
+      } catch (error: any) {
+        showToast(`保存失败，未关闭：${error?.message ?? error}`);
+        return;
+      }
+    }
+    const index = tabs.findIndex((item) => item.id === id);
+    const next = tabs.filter((item) => item.id !== id);
     setTabs(next);
     if (activeTabId === id) {
       setActiveTabId(next[Math.min(index, next.length - 1)]?.id ?? null);

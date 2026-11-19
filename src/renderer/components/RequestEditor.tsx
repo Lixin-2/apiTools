@@ -377,8 +377,14 @@ export default function RequestEditor({
           {sending ? <span className="spinner" /> : <Icon name="send" size={13} />}
           {sending ? '发送中' : '发送'}
         </button>
-        <button className={`save-btn ${dirty ? 'dirty' : ''}`} onClick={onSave} title="保存（⌘S）">
-          <Icon name="check" size={13} />
+        <button
+          className={`save-btn ${dirty ? 'dirty' : ''}`}
+          onClick={onSave}
+          disabled={!dirty}
+          title={dirty ? '保存修改（⌘S）' : '当前内容已保存'}
+        >
+          <Icon name={dirty ? 'check' : 'check'} size={13} />
+          <span>{dirty ? '保存' : '已保存'}</span>
         </button>
       </div>
 

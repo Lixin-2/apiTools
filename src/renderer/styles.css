@@ -1036,23 +1036,37 @@ body.resizing-row * {
   box-shadow: none;
 }
 .save-btn {
-  width: 38px;
   height: 36px;
+  padding: 0 13px;
   border-radius: 9px;
   border: 1px solid var(--border);
   background: var(--bg-elev-2);
   color: var(--text-dim);
-  display: grid;
-  place-items: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  flex: 0 0 auto;
+  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease,
+    box-shadow 0.14s ease;
 }
-.save-btn:hover {
+.save-btn:hover:not(:disabled) {
   color: var(--text);
   background: var(--bg-elev-3);
 }
 .save-btn.dirty {
-  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
-  color: var(--accent-text);
-  background: var(--accent-soft);
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 6px 18px rgba(109, 76, 240, 0.28);
+}
+.save-btn.dirty:hover:not(:disabled) {
+  filter: brightness(1.07);
+}
+.save-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .request-meta {

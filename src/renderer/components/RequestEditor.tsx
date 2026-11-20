@@ -11,7 +11,7 @@ import {
 import { splitUrlToParams, substituteVars } from '../../shared/url';
 import { Icon, METHOD_COLORS, MethodTag, Select } from './ui';
 import VarInput from './VarInput';
-import CodeEditor from './CodeEditor';
+import CodeEditor, { EditorActions } from './CodeEditor';
 
 interface Props {
   draft: ApiRequest;
@@ -310,6 +310,7 @@ export default function RequestEditor({
   onLoadTest,
 }: Props) {
   const [tab, setTab] = React.useState<TabKey>('params');
+  const bodyActions = React.useRef<EditorActions | null>(null);
 
   const activeParams = draft.params.filter((p) => p.enabled && p.key).length;
   const activeHeaders = draft.headers.filter((h) => h.enabled && h.key).length;
@@ -499,10 +500,20 @@ export default function RequestEditor({
                 ))}
               </div>
               {(draft.bodyType === 'json' || draft.bodyType === 'text') && (
-                <button className="chip-button ghost" onClick={formatBody} disabled={!draft.body.trim()}>
-                  <Icon name="spark" size={12} />
-                  格式化
-                </button>
+                <>
+                  <button className="chip-button ghost" onClick={formatBody} disabled={!draft.body.trim()}>
+                    <Icon name="spark" size={12} />
+                    格式化
+                  </button>
+                  <button
+                    className="chip-button ghost"
+                    onClick={() => bodyActions.current?.openSearch()}
+                    title="搜索请求体（⌘F）"
+                  >
+                    <Icon name="search" size={12} />
+                    搜索
+                  </button>
+                </>
               )}
               {draft.bodyType === 'json' && !!draft.body.trim() && (
                 <span className={`body-valid ${jsonError ? 'invalid' : ''}`}>
@@ -517,6 +528,7 @@ export default function RequestEditor({
             {(draft.bodyType === 'json' || draft.bodyType === 'text') && (
               <>
                 <CodeEditor
+                  actionsRef={bodyActions}
                   value={draft.body}
                   language={draft.bodyType === 'json' ? 'json' : 'text'}
                   onChange={(body) => onChange({ body })}

@@ -1,8 +1,15 @@
 import React from 'react';
-import { Compartment, EditorState } from '@codemirror/state';
-import { EditorView, placeholder as placeholderExt } from '@codemirror/view';
+import { Compartment, EditorState, Prec, StateEffect, StateField } from '@codemirror/state';
+import {
+  Decoration,
+  DecorationSet,
+  EditorView,
+  keymap,
+  placeholder as placeholderExt,
+} from '@codemirror/view';
 import { basicSetup } from 'codemirror';
 import { json } from '@codemirror/lang-json';
+import { SearchQuery } from '@codemirror/search';
 import {
   ensureSyntaxTree,
   foldAll,
@@ -11,6 +18,7 @@ import {
   unfoldAll,
 } from '@codemirror/language';
 import { tags as t } from '@lezer/highlight';
+import { Icon } from './ui';
 
 function isDark() {
   return document.documentElement.dataset.theme === 'dark';
@@ -55,36 +63,6 @@ function buildTheme(dark: boolean) {
         backgroundColor: 'color-mix(in srgb, var(--accent) 26%, transparent) !important',
       },
       '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--text)' },
-      '.cm-panels': {
-        backgroundColor: 'var(--bg-elev-2)',
-        color: 'var(--text)',
-        borderTop: '1px solid var(--border)',
-      },
-      '.cm-panel.cm-search': { padding: '6px 8px', fontSize: '12px' },
-      '.cm-panel.cm-search input, .cm-panel.cm-search button, .cm-panel.cm-search label': {
-        fontSize: '12px',
-      },
-      '.cm-panel.cm-search input': {
-        backgroundColor: 'var(--bg-input)',
-        border: '1px solid var(--border)',
-        borderRadius: '5px',
-        padding: '2px 6px',
-        color: 'var(--text)',
-      },
-      '.cm-panel.cm-search button': {
-        backgroundColor: 'var(--bg-elev-3)',
-        border: '1px solid var(--border)',
-        borderRadius: '5px',
-        padding: '2px 8px',
-        color: 'var(--text)',
-        cursor: 'pointer',
-      },
-      '.cm-searchMatch': {
-        backgroundColor: 'color-mix(in srgb, var(--warning) 40%, transparent)',
-      },
-      '.cm-searchMatch.cm-searchMatch-selected': {
-        backgroundColor: 'color-mix(in srgb, var(--accent) 45%, transparent)',
-      },
       '.cm-tooltip': {
         backgroundColor: 'var(--bg-elev)',
         border: '1px solid var(--border)',
@@ -105,9 +83,36 @@ const highlightStyle = HighlightStyle.define([
   { tag: [t.punctuation, t.bracket, t.separator], color: 'var(--text-faint)' },
 ]);
 
+/* ------------------------------- 搜索高亮 ------------------------------- */
+
+const matchMark = Decoration.mark({ class: 'cm-find-match' });
+const currentMatchMark = Decoration.mark({ class: 'cm-find-current' });
+
+const setMatches = StateEffect.define<{ from: number; to: number; current: boolean }[]>();
+
+const matchField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(value, tr) {
+    let next = value.map(tr.changes);
+    for (const effect of tr.effects) {
+      if (effect.is(setMatches)) {
+        next = Decoration.set(
+          effect.value.map((item) =>
+            (item.current ? currentMatchMark : matchMark).range(item.from, item.to),
+          ),
+          true,
+        );
+      }
+    }
+    return next;
+  },
+  provide: (field) => EditorView.decorations.from(field),
+});
+
 export interface EditorActions {
   foldAll: () => void;
   unfoldAll: () => void;
+  openSearch: () => void;
 }
 
 interface Props {
@@ -120,7 +125,7 @@ interface Props {
   actionsRef?: React.MutableRefObject<EditorActions | null>;
 }
 
-/** 基于 CodeMirror 6 的编辑器：折叠、⌘F 搜索、语法高亮、视口渲染（大文件不卡） */
+/** 基于 CodeMirror 6 的编辑器：折叠、自绘搜索条、语法高亮、视口渲染 */
 export default function CodeEditor({
   value,
   onChange,
@@ -132,12 +137,65 @@ export default function CodeEditor({
 }: Props) {
   const hostRef = React.useRef<HTMLDivElement>(null);
   const viewRef = React.useRef<EditorView | null>(null);
+  const inputRef = React.useRef<HTMLInputElement>(null);
   const onChangeRef = React.useRef(onChange);
   onChangeRef.current = onChange;
+
+  const [searchOpen, setSearchOpen] = React.useState(false);
+  const [query, setQuery] = React.useState('');
+  const [active, setActive] = React.useState(0);
+  const matchesRef = React.useRef<{ from: number; to: number }[]>([]);
 
   const langCompartment = React.useRef(new Compartment()).current;
   const themeCompartment = React.useRef(new Compartment()).current;
   const editableCompartment = React.useRef(new Compartment()).current;
+
+  const openSearch = React.useCallback(() => {
+    setSearchOpen(true);
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    });
+  }, []);
+
+  /** 执行搜索并跳到第 index 个匹配 */
+  const runSearch = React.useCallback((raw: string, index: number) => {
+    const view = viewRef.current;
+    if (!view) return;
+    const found: { from: number; to: number }[] = [];
+    if (raw.trim()) {
+      const searchQuery = new SearchQuery({ search: raw });
+      const cursor = searchQuery.getCursor(view.state.doc);
+      for (let next = cursor.next(); !next.done; next = cursor.next()) {
+        found.push({ from: next.value.from, to: next.value.to });
+        if (found.length >= 3000) break;
+      }
+    }
+    matchesRef.current = found;
+    if (!found.length) {
+      setActive(-1);
+      view.dispatch({ effects: setMatches.of([]) });
+      return;
+    }
+    const current = ((index % found.length) + found.length) % found.length;
+    setActive(current);
+    const target = found[current];
+    view.dispatch({
+      effects: [
+        setMatches.of(found.map((item, i) => ({ ...item, current: i === current }))),
+        EditorView.scrollIntoView(target.from, { y: 'center' }),
+      ],
+      selection: { anchor: target.from, head: target.to },
+    });
+  }, []);
+
+  const closeSearch = React.useCallback(() => {
+    setSearchOpen(false);
+    setQuery('');
+    matchesRef.current = [];
+    setActive(-1);
+    viewRef.current?.dispatch({ effects: setMatches.of([]) });
+  }, []);
 
   // 只创建一次编辑器实例
   React.useEffect(() => {
@@ -149,10 +207,26 @@ export default function CodeEditor({
         doc: value,
         extensions: [
           basicSetup,
+          // 用自绘搜索条替换 CodeMirror 默认面板
+          Prec.highest(
+            keymap.of([
+              {
+                key: 'Mod-f',
+                run: () => {
+                  openSearch();
+                  return true;
+                },
+              },
+            ]),
+          ),
+          matchField,
           langCompartment.of(language === 'json' ? json() : []),
           themeCompartment.of(buildTheme(isDark())),
           syntaxHighlighting(highlightStyle),
-          editableCompartment.of([EditorView.editable.of(!readOnly), EditorState.readOnly.of(readOnly)]),
+          editableCompartment.of([
+            EditorView.editable.of(!readOnly),
+            EditorState.readOnly.of(readOnly),
+          ]),
           placeholder ? placeholderExt(placeholder) : [],
           EditorView.updateListener.of((update) => {
             if (update.docChanged) onChangeRef.current?.(update.state.doc.toString());
@@ -165,13 +239,14 @@ export default function CodeEditor({
       actionsRef.current = {
         foldAll: () => foldAll(view),
         unfoldAll: () => unfoldAll(view),
+        openSearch,
       };
     }
 
     // 首次挂载时容器高度可能还是 0，且语法树尚未解析完，
     // 会导致折叠栏按钮不出现。这里主动解析并重新测量。
     const settle = () => {
-      ensureSyntaxTree(view.state, view.state.doc.length, 1500);
+      ensureSyntaxTreeSafe(view);
       view.requestMeasure();
     };
     const raf = requestAnimationFrame(settle);
@@ -197,13 +272,12 @@ export default function CodeEditor({
     const current = view.state.doc.toString();
     if (current !== value) {
       view.dispatch({ changes: { from: 0, to: current.length, insert: value } });
-      // 切标签/格式化后立即解析，折叠按钮马上可用
-      ensureSyntaxTree(view.state, view.state.doc.length, 1500);
+      ensureSyntaxTreeSafe(view);
       view.requestMeasure();
+      if (searchOpen && query) runSearch(query, 0);
     }
-  }, [value]);
+  }, [value, searchOpen, query, runSearch]);
 
-  // 语言 / 只读切换
   React.useEffect(() => {
     viewRef.current?.dispatch({
       effects: langCompartment.reconfigure(language === 'json' ? json() : []),
@@ -219,7 +293,6 @@ export default function CodeEditor({
     });
   }, [readOnly, editableCompartment]);
 
-  // 跟随应用主题
   React.useEffect(() => {
     const observer = new MutationObserver(() => {
       viewRef.current?.dispatch({
@@ -233,5 +306,62 @@ export default function CodeEditor({
     return () => observer.disconnect();
   }, [themeCompartment]);
 
-  return <div className={`code-editor ${className}`} ref={hostRef} />;
+  const count = matchesRef.current.length;
+
+  return (
+    <div className={`code-editor ${className}`} ref={hostRef}>
+      {searchOpen && (
+        <div className="cm-search-bar">
+          <Icon name="search" size={12} />
+          <input
+            ref={inputRef}
+            value={query}
+            placeholder="在当前内容中搜索"
+            spellCheck={false}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              runSearch(event.target.value, 0);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                runSearch(query, active + (event.shiftKey ? -1 : 1));
+              }
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                closeSearch();
+              }
+            }}
+          />
+          <span className="cm-search-count">
+            {query ? (count ? `${active + 1}/${count}` : '0/0') : ''}
+          </span>
+          <button
+            className="cm-search-btn"
+            title="上一处"
+            onClick={() => runSearch(query, active - 1)}
+            disabled={!count}
+          >
+            <Icon name="chevron" size={10} style={{ transform: 'rotate(-90deg)' }} />
+          </button>
+          <button
+            className="cm-search-btn"
+            title="下一处"
+            onClick={() => runSearch(query, active + 1)}
+            disabled={!count}
+          >
+            <Icon name="chevron" size={10} style={{ transform: 'rotate(90deg)' }} />
+          </button>
+          <button className="cm-search-btn" title="关闭" onClick={closeSearch}>
+            <Icon name="close" size={10} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 首次挂载后强制解析语法树，保证折叠按钮立刻可用 */
+function ensureSyntaxTreeSafe(view: EditorView) {
+  ensureSyntaxTree(view.state, view.state.doc.length, 1500);
 }

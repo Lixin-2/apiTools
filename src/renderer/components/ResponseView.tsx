@@ -137,6 +137,16 @@ function ResponseView({ response, sending }: Props) {
               {label}
             </button>
           ))}
+          {tab === 'body' && response.bodyKind !== 'binary' && (
+            <button
+              className="response-tab"
+              onClick={() => editorActions.current?.openSearch()}
+              title="搜索响应内容（⌘F）"
+            >
+              <Icon name="search" size={11} />
+              搜索
+            </button>
+          )}
           {response.bodyKind === 'json' && tab === 'body' && (
             <>
               <button className="response-tab" onClick={() => editorActions.current?.foldAll()}>

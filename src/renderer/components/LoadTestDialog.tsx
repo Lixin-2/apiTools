@@ -43,7 +43,11 @@ export default function LoadTestDialog({ requestName, payload, onClose }: Props)
   const [mode, setMode] = React.useState<'duration' | 'count'>('duration');
   const [duration, setDuration] = React.useState('30');
   const [total, setTotal] = React.useState('1000');
-  const [rps, setRps] = React.useState('0');
+  const [rateMode, setRateMode] = React.useState<'unlimited' | 'fixed' | 'random'>('unlimited');
+  const [rps, setRps] = React.useState('50');
+  const [minRps, setMinRps] = React.useState('20');
+  const [maxRps, setMaxRps] = React.useState('80');
+  const [changeSecs, setChangeSecs] = React.useState('5');
   const [rampUp, setRampUp] = React.useState('0');
   const [running, setRunning] = React.useState(false);
   const [snapshot, setSnapshot] = React.useState<LoadTestSnapshot | null>(null);
@@ -108,6 +112,14 @@ export default function LoadTestDialog({ requestName, payload, onClose }: Props)
       setError('请求数至少为 1');
       return;
     }
+    if (rateMode === 'fixed' && num(rps) < 1) {
+      setError('固定 TPS 至少为 1（不限制请切到「不限速」）');
+      return;
+    }
+    if (rateMode === 'random' && (num(minRps) < 1 || num(maxRps) < num(minRps))) {
+      setError('随机区间需要：最小 TPS ≥ 1，且最大 ≥ 最小');
+      return;
+    }
     setSeries({ qps: [], avg: [], p95: [] });
     setSnapshot(null);
     try {
@@ -120,7 +132,11 @@ export default function LoadTestDialog({ requestName, payload, onClose }: Props)
         concurrency: num(concurrency),
         durationMs: mode === 'duration' ? num(duration) * 1000 : undefined,
         totalRequests: mode === 'count' ? num(total) : undefined,
-        targetRps: num(rps),
+        rateMode,
+        targetRps: rateMode === 'fixed' ? num(rps) : 0,
+        minRps: rateMode === 'random' ? num(minRps) : 0,
+        maxRps: rateMode === 'random' ? num(maxRps) : 0,
+        rpsChangeSecs: rateMode === 'random' ? Math.max(1, num(changeSecs)) : 0,
         rampUpMs: num(rampUp) * 1000,
       });
       setRunning(true);
@@ -276,15 +292,74 @@ export default function LoadTestDialog({ requestName, payload, onClose }: Props)
             />
           </label>
         )}
-        <label className="lt-field">
-          <span>目标 RPS（0=不限）</span>
-          <input
-            className="text-input"
-            value={rps}
-            disabled={running}
-            onChange={(event) => setRps(event.target.value.replace(/[^0-9]/g, ''))}
-          />
-        </label>
+        <div className="lt-field" style={{ gridColumn: 'span 2' }}>
+          <span>速率模式</span>
+          <div className="seg">
+            <button
+              className={rateMode === 'unlimited' ? 'active' : ''}
+              disabled={running}
+              onClick={() => setRateMode('unlimited')}
+            >
+              不限速
+            </button>
+            <button
+              className={rateMode === 'fixed' ? 'active' : ''}
+              disabled={running}
+              onClick={() => setRateMode('fixed')}
+            >
+              固定 TPS
+            </button>
+            <button
+              className={rateMode === 'random' ? 'active' : ''}
+              disabled={running}
+              onClick={() => setRateMode('random')}
+            >
+              随机 TPS
+            </button>
+          </div>
+        </div>
+        {rateMode === 'fixed' && (
+          <label className="lt-field">
+            <span>目标 TPS</span>
+            <input
+              className="text-input"
+              value={rps}
+              disabled={running}
+              onChange={(event) => setRps(event.target.value.replace(/[^0-9]/g, ''))}
+            />
+          </label>
+        )}
+        {rateMode === 'random' && (
+          <>
+            <label className="lt-field">
+              <span>最小 TPS</span>
+              <input
+                className="text-input"
+                value={minRps}
+                disabled={running}
+                onChange={(event) => setMinRps(event.target.value.replace(/[^0-9]/g, ''))}
+              />
+            </label>
+            <label className="lt-field">
+              <span>最大 TPS</span>
+              <input
+                className="text-input"
+                value={maxRps}
+                disabled={running}
+                onChange={(event) => setMaxRps(event.target.value.replace(/[^0-9]/g, ''))}
+              />
+            </label>
+            <label className="lt-field">
+              <span>变化间隔（秒）</span>
+              <input
+                className="text-input"
+                value={changeSecs}
+                disabled={running}
+                onChange={(event) => setChangeSecs(event.target.value.replace(/[^0-9]/g, ''))}
+              />
+            </label>
+          </>
+        )}
         <label className="lt-field">
           <span>逐级加压（秒）</span>
           <input
@@ -311,7 +386,11 @@ export default function LoadTestDialog({ requestName, payload, onClose }: Props)
       ) : (
         <>
           <div className="lt-metrics">
-            <Metric label="QPS" value={snapshot.qps.toFixed(1)} tone="accent" />
+            <Metric
+              label={snapshot.targetRps > 0 ? `QPS / 目标 ${snapshot.targetRps}` : 'QPS'}
+              value={snapshot.qps.toFixed(1)}
+              tone="accent"
+            />
             <Metric label="总请求" value={snapshot.total} />
             <Metric label="成功" value={snapshot.success} tone="ok" />
             <Metric

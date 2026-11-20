@@ -237,7 +237,13 @@ export interface LoadTestConfig {
   concurrency: number;
   durationMs?: number;
   totalRequests?: number;
+  /** 速率模式：不限 / 固定 / 随机区间 */
+  rateMode?: 'unlimited' | 'fixed' | 'random';
   targetRps?: number;
+  minRps?: number;
+  maxRps?: number;
+  /** 随机模式重新采样间隔（秒） */
+  rpsChangeSecs?: number;
   rampUpMs?: number;
   timeoutMs?: number;
 }
@@ -262,4 +268,6 @@ export interface LoadTestSnapshot {
   buckets: [number, number][];
   slowest: { ms: number; status: number; error?: string }[];
   concurrency: number;
+  /** 当前生效的目标 TPS（0 = 不限速） */
+  targetRps: number;
 }

@@ -26,9 +26,20 @@ pub struct LoadTestConfig {
     pub duration_ms: Option<u64>,
     #[serde(default)]
     pub total_requests: Option<u64>,
-    /// 0 表示不限速
+    /// 速率模式：unlimited / fixed / random
+    #[serde(default)]
+    pub rate_mode: Option<String>,
+    /// 固定模式下的目标 TPS（0 表示不限速）
     #[serde(default)]
     pub target_rps: u64,
+    /// 随机模式：最小 / 最大 TPS
+    #[serde(default)]
+    pub min_rps: u64,
+    #[serde(default)]
+    pub max_rps: u64,
+    /// 随机模式：每隔多少秒重新采样一次速率
+    #[serde(default = "default_change_secs")]
+    pub rps_change_secs: u64,
     #[serde(default)]
     pub ramp_up_ms: u64,
     #[serde(default)]
@@ -37,6 +48,48 @@ pub struct LoadTestConfig {
 
 fn default_concurrency() -> usize {
     10
+}
+
+fn default_change_secs() -> u64 {
+    5
+}
+
+fn rate_mode_of(config: &LoadTestConfig) -> &'static str {
+    match config.rate_mode.as_deref() {
+        Some("random") => "random",
+        Some("fixed") => "fixed",
+        Some("unlimited") => "unlimited",
+        _ => {
+            if config.target_rps > 0 || config.min_rps > 0 || config.max_rps > 0 {
+                if config.min_rps > 0 && config.max_rps > 0 {
+                    "random"
+                } else {
+                    "fixed"
+                }
+            } else {
+                "unlimited"
+            }
+        }
+    }
+}
+
+static RAND_STATE: AtomicU64 = AtomicU64::new(0x2545F4914F6CDD1D);
+
+fn next_rand() -> u64 {
+    let mut x = RAND_STATE.fetch_add(0x9E3779B97F4A7C15, Ordering::Relaxed)
+        ^ (crate::model::now_ms() as u64).wrapping_mul(0x2545F4914F6CDD1D);
+    x ^= x >> 30;
+    x = x.wrapping_mul(0xBF58476D1CE4E5B9);
+    x ^= x >> 27;
+    x = x.wrapping_mul(0x94D049BB133111EB);
+    x ^ (x >> 31)
+}
+
+fn rand_between(min: u64, max: u64) -> u64 {
+    if max <= min {
+        return min;
+    }
+    min + next_rand() % (max - min + 1)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -70,6 +123,8 @@ pub struct LoadTestSnapshot {
     pub buckets: Vec<(u64, u64)>,
     pub slowest: Vec<SlowRequest>,
     pub concurrency: usize,
+    /// 当前生效的目标 TPS（0 = 不限速）
+    pub target_rps: u64,
 }
 
 struct Metrics {
@@ -190,6 +245,7 @@ impl Metrics {
         running: bool,
         elapsed_ms: u64,
         concurrency: usize,
+        target_rps: u64,
     ) -> LoadTestSnapshot {
         let seconds = (elapsed_ms as f64 / 1000.0).max(0.001);
         let avg = if self.total > 0 {
@@ -223,6 +279,7 @@ impl Metrics {
             buckets: self.buckets(),
             slowest: self.slowest.clone(),
             concurrency,
+            target_rps,
         }
     }
 }
@@ -281,7 +338,39 @@ pub async fn run(app: tauri::AppHandle, config: LoadTestConfig) {
     }
 
     let metrics = Arc::new(Mutex::new(Metrics::new()));
+    let current_rate = Arc::new(AtomicU64::new(0));
     let started = Instant::now();
+
+    // 速率控制器：固定模式只设一次，随机模式按间隔重新采样，模拟生产流量波动
+    let controller = {
+        let config_rate = config.clone();
+        let rate = current_rate.clone();
+        let stop_controller = stop.clone();
+        tauri::async_runtime::spawn(async move {
+            let mode = rate_mode_of(&config_rate);
+            let interval = Duration::from_secs(config_rate.rps_change_secs.max(1));
+            loop {
+                if stop_controller.load(Ordering::Relaxed) {
+                    break;
+                }
+                let value = match mode {
+                    "random" => {
+                        let min = config_rate.min_rps.max(1);
+                        let max = config_rate.max_rps.max(min);
+                        rand_between(min, max)
+                    }
+                    "fixed" => config_rate.target_rps,
+                    _ => 0,
+                };
+                rate.store(value, Ordering::Relaxed);
+                if mode != "random" {
+                    break;
+                }
+                tokio::time::sleep(interval).await;
+            }
+        })
+    };
+
     let deadline = config
         .duration_ms
         .map(|ms| started + Duration::from_millis(ms.max(500)));
@@ -293,17 +382,13 @@ pub async fn run(app: tauri::AppHandle, config: LoadTestConfig) {
         let worker_stop = stop.clone();
         let worker_sent = sent.clone();
         let worker_metrics = metrics.clone();
+        let worker_rate = current_rate.clone();
         let worker_config = config.clone();
         let worker_headers = headers.clone();
         let worker_body = body.clone();
         let worker_parts = parts.clone();
         let ramp = if config.ramp_up_ms > 0 {
             Duration::from_millis(config.ramp_up_ms * index as u64 / concurrency.max(1) as u64)
-        } else {
-            Duration::ZERO
-        };
-        let gap = if config.target_rps > 0 {
-            Duration::from_millis((1000 * concurrency as u64 / config.target_rps).max(1))
         } else {
             Duration::ZERO
         };
@@ -354,8 +439,16 @@ pub async fn run(app: tauri::AppHandle, config: LoadTestConfig) {
                     guard.record(status, elapsed, size, error);
                 }
 
-                if !gap.is_zero() {
-                    tokio::time::sleep(gap).await;
+                let rate = worker_rate.load(Ordering::Relaxed);
+                if rate > 0 {
+                    let per_worker = (rate as f64 / concurrency as f64).max(0.25);
+                    let base_micros = (1_000_000.0 / per_worker) as u64;
+                    // ±25% 抖动，让请求间隔不那么机械
+                    let jitter = 0.9 + (next_rand() % 2000) as f64 / 10_000.0;
+                    let wait = (base_micros as f64 * jitter) as u64;
+                    if wait > 0 {
+                        tokio::time::sleep(Duration::from_micros(wait)).await;
+                    }
                 }
             }
         }));
@@ -363,15 +456,39 @@ pub async fn run(app: tauri::AppHandle, config: LoadTestConfig) {
 
     // 定时推送快照，直到所有 worker 结束
     let metrics_push = metrics.clone();
+    let rate_push = current_rate.clone();
     let app_push = app.clone();
     let stop_push = stop.clone();
     let push_task = tauri::async_runtime::spawn(async move {
+        let mut window: std::collections::VecDeque<(Instant, u64)> =
+            std::collections::VecDeque::new();
+        window.push_back((Instant::now(), 0u64));
         loop {
             tokio::time::sleep(Duration::from_millis(PUSH_INTERVAL_MS)).await;
-            let snapshot = metrics_push.lock().map(|guard| {
-                guard.snapshot(!stop_push.load(Ordering::Relaxed), started.elapsed().as_millis() as u64, concurrency)
+            let measured = metrics_push.lock().map(|guard| {
+                let total = guard.total;
+                (
+                    total,
+                    guard.snapshot(
+                        !stop_push.load(Ordering::Relaxed),
+                        started.elapsed().as_millis() as u64,
+                        concurrency,
+                        rate_push.load(Ordering::Relaxed),
+                    ),
+                )
             });
-            if let Ok(snapshot) = snapshot {
+            if let Ok((total, mut snapshot)) = measured {
+                // 1 秒滑动窗口的 QPS：既能反映随机速率的台阶，又不会太抖
+                let now = Instant::now();
+                window.push_back((now, total));
+                while window.len() > 2
+                    && now.duration_since(window.front().unwrap().0) > Duration::from_millis(1000)
+                {
+                    window.pop_front();
+                }
+                let (start_at, start_total) = *window.front().unwrap();
+                let span = now.duration_since(start_at).as_secs_f64().max(0.05);
+                snapshot.qps = total.saturating_sub(start_total) as f64 / span;
                 let _ = app_push.emit("loadtest-progress", snapshot);
             }
             if stop_push.load(Ordering::Relaxed) {
@@ -384,11 +501,17 @@ pub async fn run(app: tauri::AppHandle, config: LoadTestConfig) {
         let _ = handle.await;
     }
     stop.store(true, Ordering::Relaxed);
+    let _ = controller.await;
     let _ = push_task.await;
 
     // 最终快照
     if let Ok(guard) = metrics.lock() {
-        let snapshot = guard.snapshot(false, started.elapsed().as_millis() as u64, concurrency);
+        let snapshot = guard.snapshot(
+            false,
+            started.elapsed().as_millis() as u64,
+            concurrency,
+            current_rate.load(Ordering::Relaxed),
+        );
         let _ = app.emit("loadtest-progress", snapshot.clone());
         let _ = app.emit("loadtest-finished", snapshot);
     }

@@ -228,3 +228,38 @@ export function createRequest(input: Partial<ApiRequest> = {}): ApiRequest {
     updatedAt: input.updatedAt ?? now,
   };
 }
+export interface LoadTestConfig {
+  method: string;
+  url: string;
+  headers: Record<string, string>;
+  body?: string;
+  formFields?: FormField[];
+  concurrency: number;
+  durationMs?: number;
+  totalRequests?: number;
+  targetRps?: number;
+  rampUpMs?: number;
+  timeoutMs?: number;
+}
+
+export interface LoadTestSnapshot {
+  running: boolean;
+  elapsedMs: number;
+  total: number;
+  success: number;
+  failed: number;
+  errors: Record<string, number>;
+  statusClasses: Record<string, number>;
+  qps: number;
+  avgMs: number;
+  p50: number;
+  p90: number;
+  p95: number;
+  p99: number;
+  minMs: number;
+  maxMs: number;
+  bytesPerSec: number;
+  buckets: [number, number][];
+  slowest: { ms: number; status: number; error?: string }[];
+  concurrency: number;
+}

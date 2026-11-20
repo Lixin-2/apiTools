@@ -23,6 +23,7 @@ import {
   Modal,
 } from './components/Dialogs';
 import { AppMark, Icon, METHOD_COLORS, Select } from './components/ui';
+import LoadTestDialog from './components/LoadTestDialog';
 
 type DialogKey = 'import' | 'mcp' | 'env' | null;
 type ThemeMode = 'light' | 'dark' | 'system';
@@ -224,6 +225,7 @@ export default function App() {
   const [activeTabId, setActiveTabId] = React.useState<string | null>(loadActiveTabId);
   const [dialog, setDialog] = React.useState<DialogKey>(null);
   const [exportTarget, setExportTarget] = React.useState<Collection | null>(null);
+  const [loadTestOpen, setLoadTestOpen] = React.useState(false);
 
   const [toast, setToast] = React.useState('');
   const [promptState, setPromptState] = React.useState<{
@@ -620,77 +622,80 @@ export default function App() {
     showToast('目录已删除');
   };
 
+  /** 把编辑器里的请求组装成实际发送的报文（环境前缀、统一请求头、鉴权、表单） */
+  const buildRequestPayload = (request: ApiRequest) => {
+    const vars: Record<string, string> = {};
+    let url = request.url.trim();
+    if (!/^https?:\/\//i.test(url) && envBaseUrl) {
+      url = `${envBaseUrl.replace(/\/+$/, '')}/${url.replace(/^\/+/, '')}`;
+    }
+    const params: KeyValue[] = request.params.map((param) => ({
+      ...param,
+      key: substituteVars(param.key, vars),
+      value: substituteVars(param.value, vars),
+    }));
+    url = applyParams(url, params);
+
+    const headers: Record<string, string> = {};
+    for (const header of activeEnv?.headers ?? []) {
+      if (!header.enabled || !header.key) continue;
+      headers[header.key] = header.value;
+    }
+    for (const header of request.headers) {
+      if (!header.enabled || !header.key) continue;
+      headers[substituteVars(header.key, vars)] = substituteVars(header.value, vars);
+    }
+    const auth = request.auth;
+    if (auth.type === 'bearer' && auth.token) {
+      headers['Authorization'] = `Bearer ${substituteVars(auth.token, vars)}`;
+    } else if (auth.type === 'basic') {
+      const raw = `${substituteVars(auth.username ?? '', vars)}:${substituteVars(auth.password ?? '', vars)}`;
+      headers['Authorization'] = `Basic ${utf8ToBase64(raw)}`;
+    } else if (auth.type === 'apikey' && auth.key) {
+      const key = substituteVars(auth.key, vars);
+      const value = substituteVars(auth.value ?? '', vars);
+      if (auth.addTo === 'query') {
+        url = applyParams(url, [{ id: 'auth', key, value, enabled: true }]);
+      } else {
+        headers[key] = value;
+      }
+    }
+
+    let body = substituteVars(request.body, vars);
+    if (request.bodyType === 'urlencoded') {
+      body = (request.formFields ?? [])
+        .filter((field) => field.enabled && field.key)
+        .map((field) => `${encodeURIComponent(field.key)}=${encodeURIComponent(field.value ?? '')}`)
+        .join('&');
+    }
+
+    if (request.bodyType !== 'none' && request.bodyType !== 'form') {
+      const hasContentType = Object.keys(headers).some((key) => key.toLowerCase() === 'content-type');
+      if (!hasContentType) {
+        headers['Content-Type'] =
+          request.bodyType === 'json'
+            ? 'application/json'
+            : request.bodyType === 'urlencoded'
+              ? 'application/x-www-form-urlencoded'
+              : 'text/plain';
+      }
+    }
+
+    return {
+      method: request.method,
+      url,
+      headers,
+      body: request.bodyType === 'none' || request.bodyType === 'form' ? '' : body,
+      formFields: request.bodyType === 'form' ? request.formFields ?? [] : undefined,
+    };
+  };
+
   const send = async () => {
     if (!draft || sending) return;
     const tabId = activeTabId;
     patchTab(tabId, { sending: true, response: null });
     try {
-      const vars: Record<string, string> = {};
-      let url = draft.url.trim();
-      // 环境统一 URL 前缀：接口写相对路径时自动拼接
-      if (!/^https?:\/\//i.test(url) && envBaseUrl) {
-        url = `${envBaseUrl.replace(/\/+$/, '')}/${url.replace(/^\/+/, '')}`;
-      }
-      const params: KeyValue[] = draft.params.map((p) => ({
-        ...p,
-        key: substituteVars(p.key, vars),
-        value: substituteVars(p.value, vars),
-      }));
-      url = applyParams(url, params);
-
-      const headers: Record<string, string> = {};
-      // 环境统一请求头（请求内同名 Header 会覆盖）
-      for (const header of activeEnv?.headers ?? []) {
-        if (!header.enabled || !header.key) continue;
-        headers[header.key] = header.value;
-      }
-      for (const h of draft.headers) {
-        if (!h.enabled || !h.key) continue;
-        headers[substituteVars(h.key, vars)] = substituteVars(h.value, vars);
-      }
-      const auth = draft.auth;
-      if (auth.type === 'bearer' && auth.token) {
-        headers['Authorization'] = `Bearer ${substituteVars(auth.token, vars)}`;
-      } else if (auth.type === 'basic') {
-        const raw = `${substituteVars(auth.username ?? '', vars)}:${substituteVars(auth.password ?? '', vars)}`;
-        headers['Authorization'] = `Basic ${utf8ToBase64(raw)}`;
-      } else if (auth.type === 'apikey' && auth.key) {
-        const key = substituteVars(auth.key, vars);
-        const value = substituteVars(auth.value ?? '', vars);
-        if (auth.addTo === 'query') {
-          url = applyParams(url, [{ id: 'auth', key, value, enabled: true }]);
-        } else {
-          headers[key] = value;
-        }
-      }
-
-      let body = substituteVars(draft.body, vars);
-      if (draft.bodyType === 'urlencoded') {
-        body = (draft.formFields ?? [])
-          .filter((field) => field.enabled && field.key)
-          .map((field) => `${encodeURIComponent(field.key)}=${encodeURIComponent(field.value ?? '')}`)
-          .join('&');
-      }
-
-      if (draft.bodyType !== 'none' && draft.bodyType !== 'form') {
-        const hasContentType = Object.keys(headers).some((k) => k.toLowerCase() === 'content-type');
-        if (!hasContentType) {
-          headers['Content-Type'] =
-            draft.bodyType === 'json'
-              ? 'application/json'
-              : draft.bodyType === 'urlencoded'
-                ? 'application/x-www-form-urlencoded'
-                : 'text/plain';
-        }
-      }
-
-      const result = await window.api.sendRequest({
-        method: draft.method,
-        url,
-        headers,
-        body: draft.bodyType === 'none' || draft.bodyType === 'form' ? '' : body,
-        formFields: draft.bodyType === 'form' ? draft.formFields ?? [] : undefined,
-      });
+      const result = await window.api.sendRequest(buildRequestPayload(draft));
       patchTab(tabId, { response: result });
     } catch (error: any) {
       patchTab(tabId, {
@@ -916,6 +921,7 @@ export default function App() {
                 onChange={updateDraft}
                 onSend={send}
                 onSave={() => saveDraft()}
+                onLoadTest={() => setLoadTestOpen(true)}
               />
               </div>
               <div
@@ -1010,6 +1016,14 @@ export default function App() {
           onSave={async (format) => {
             await handleExport(exportTarget, format, true);
           }}
+        />
+      )}
+
+      {loadTestOpen && draft && (
+        <LoadTestDialog
+          requestName={draft.name || '未命名请求'}
+          payload={buildRequestPayload(draft)}
+          onClose={() => setLoadTestOpen(false)}
         />
       )}
 

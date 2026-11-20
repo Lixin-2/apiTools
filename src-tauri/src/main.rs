@@ -2,7 +2,7 @@
 
 mod rest;
 
-use apitools_core::{exporters, http_client, importers, model::*, store};
+use apitools_core::{exporters, http_client, importers, load_test, model::*, store};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -524,6 +524,24 @@ fn reveal_path(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn start_load_test(app: tauri::AppHandle, config: Value) -> Result<Value, String> {
+    let parsed: load_test::LoadTestConfig =
+        serde_json::from_value(config).map_err(|e| format!("参数错误: {e}"))?;
+    load_test::validate(&parsed)?;
+    load_test::stop_current();
+    let handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        load_test::run(handle, parsed).await;
+    });
+    Ok(json!({ "ok": true }))
+}
+
+#[tauri::command]
+fn stop_load_test() {
+    load_test::stop_current();
+}
+
+#[tauri::command]
 async fn pick_file(app: tauri::AppHandle) -> Result<Option<Value>, String> {
     let picked = tauri::async_runtime::spawn_blocking(move || {
         app.dialog()
@@ -859,6 +877,8 @@ fn main() {
             delete_request,
             get_request,
             send_request,
+            start_load_test,
+            stop_load_test,
             pick_file,
             save_response_file,
             download_response_file,

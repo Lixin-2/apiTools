@@ -2299,3 +2299,115 @@ body.resizing-row * {
     transform: rotate(360deg);
   }
 }
+
+/* ------------------------------- load test --------------------------------- */
+
+.lt-config {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+.lt-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.lt-field .text-input {
+  width: 118px;
+  height: 30px;
+}
+.lt-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 36px 0;
+  color: var(--text-faint);
+  font-size: 12.5px;
+}
+.lt-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+.lt-metric {
+  border: 1px solid var(--border-soft);
+  border-radius: 9px;
+  padding: 8px 12px;
+  background: var(--bg-elev-2);
+}
+.lt-metric-label {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.lt-metric-value {
+  font-size: 19px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+}
+.lt-metric-value.ok {
+  color: var(--green);
+}
+.lt-metric-value.danger {
+  color: var(--danger);
+}
+.lt-metric-unit {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-left: 3px;
+  font-weight: 500;
+}
+.lt-chart-card {
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--bg-elev);
+  min-width: 0;
+}
+.lt-chart-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: var(--text);
+}
+.lt-charts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.chart-wrap {
+  width: 100%;
+  position: relative;
+}
+.lt-detail {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.lt-kv {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  font-size: 12px;
+  align-items: baseline;
+}
+.lt-kv span {
+  color: var(--text-faint);
+}
+.lt-kv b {
+  text-align: right;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.lt-kv b.danger {
+  color: var(--danger);
+}

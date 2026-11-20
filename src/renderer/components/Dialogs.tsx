@@ -17,6 +17,7 @@ export function Modal({
   children,
   footer,
   wide,
+  width,
 }: {
   title: string;
   subtitle?: string;
@@ -24,6 +25,7 @@ export function Modal({
   children: React.ReactNode;
   footer?: React.ReactNode;
   wide?: boolean;
+  width?: number;
 }) {
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -35,7 +37,7 @@ export function Modal({
 
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={`dialog ${wide ? 'wide' : ''}`}>
+      <div className={`dialog ${wide ? 'wide' : ''}`} style={width ? { width } : undefined}>
         <div className="dialog-head">
           <div>
             <div className="dialog-title">{title}</div>

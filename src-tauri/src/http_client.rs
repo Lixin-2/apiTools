@@ -299,6 +299,7 @@ fn build_response(resp: ureq::Response, started: Instant, url: &str) -> SendResp
     }
 }
 
+#[derive(Clone)]
 pub struct FormPart {
     pub name: String,
     pub value: Option<String>,

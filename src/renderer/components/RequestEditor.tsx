@@ -22,6 +22,7 @@ interface Props {
   baseUrl: string;
   folders: string[];
   onChange: (patch: Partial<ApiRequest>) => void;
+  onLoadTest?: () => void;
   onSend: () => void;
   onSave: () => void;
 }
@@ -306,6 +307,7 @@ export default function RequestEditor({
   onChange,
   onSend,
   onSave,
+  onLoadTest,
 }: Props) {
   const [tab, setTab] = React.useState<TabKey>('params');
 
@@ -374,6 +376,12 @@ export default function RequestEditor({
             </span>
           )}
         </div>
+        {onLoadTest && (
+          <button className="chip-button" onClick={onLoadTest} title="用当前请求做压力测试">
+            <Icon name="gauge" size={12} />
+            压测
+          </button>
+        )}
         <button className="send-btn" onClick={onSend} disabled={sending || !draft.url}>
           {sending ? <span className="spinner" /> : <Icon name="send" size={13} />}
           {sending ? '发送中' : '发送'}

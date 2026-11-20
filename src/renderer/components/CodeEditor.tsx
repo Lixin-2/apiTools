@@ -3,7 +3,13 @@ import { Compartment, EditorState } from '@codemirror/state';
 import { EditorView, placeholder as placeholderExt } from '@codemirror/view';
 import { basicSetup } from 'codemirror';
 import { json } from '@codemirror/lang-json';
-import { foldAll, HighlightStyle, syntaxHighlighting, unfoldAll } from '@codemirror/language';
+import {
+  ensureSyntaxTree,
+  foldAll,
+  HighlightStyle,
+  syntaxHighlighting,
+  unfoldAll,
+} from '@codemirror/language';
 import { tags as t } from '@lezer/highlight';
 
 function isDark() {
@@ -161,7 +167,22 @@ export default function CodeEditor({
         unfoldAll: () => unfoldAll(view),
       };
     }
+
+    // 首次挂载时容器高度可能还是 0，且语法树尚未解析完，
+    // 会导致折叠栏按钮不出现。这里主动解析并重新测量。
+    const settle = () => {
+      ensureSyntaxTree(view.state, view.state.doc.length, 1500);
+      view.requestMeasure();
+    };
+    const raf = requestAnimationFrame(settle);
+    const timer = window.setTimeout(settle, 120);
+    const observer = new ResizeObserver(() => view.requestMeasure());
+    observer.observe(host);
+
     return () => {
+      cancelAnimationFrame(raf);
+      window.clearTimeout(timer);
+      observer.disconnect();
       if (actionsRef) actionsRef.current = null;
       view.destroy();
       viewRef.current = null;
@@ -176,6 +197,9 @@ export default function CodeEditor({
     const current = view.state.doc.toString();
     if (current !== value) {
       view.dispatch({ changes: { from: 0, to: current.length, insert: value } });
+      // 切标签/格式化后立即解析，折叠按钮马上可用
+      ensureSyntaxTree(view.state, view.state.doc.length, 1500);
+      view.requestMeasure();
     }
   }, [value]);
 

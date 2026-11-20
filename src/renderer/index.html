@@ -16,6 +16,10 @@
         } catch (error) {
           document.documentElement.dataset.theme = 'light';
         }
+        // 标记运行平台：Windows 没有红绿灯按钮，标题栏留白需要调整
+        if (/Windows/i.test(navigator.userAgent)) {
+          document.documentElement.dataset.platform = 'win';
+        }
       })();
     </script>
   </head>

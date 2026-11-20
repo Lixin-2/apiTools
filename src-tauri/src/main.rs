@@ -16,12 +16,18 @@ struct RestInfo {
     token: String,
 }
 
+fn mcp_bin_name() -> &'static str {
+    if cfg!(windows) {
+        "apitools-mcp.exe"
+    } else {
+        "apitools-mcp"
+    }
+}
+
 fn mcp_server_path(app: &tauri::AppHandle) -> PathBuf {
+    let bin = mcp_bin_name();
     if let Ok(dir) = app.path().resource_dir() {
-        for candidate in [
-            dir.join("binaries").join("apitools-mcp"),
-            dir.join("apitools-mcp"),
-        ] {
+        for candidate in [dir.join("binaries").join(bin), dir.join(bin)] {
             if candidate.exists() {
                 return candidate;
             }
@@ -31,11 +37,11 @@ fn mcp_server_path(app: &tauri::AppHandle) -> PathBuf {
         .ok()
         .and_then(|p| p.parent().map(|p| p.to_path_buf()))
         .unwrap_or_else(|| PathBuf::from("."));
-    let dev = exe_dir.join("apitools-mcp");
+    let dev = exe_dir.join(bin);
     if dev.exists() {
         return dev;
     }
-    exe_dir.join("apitools-mcp")
+    exe_dir.join(bin)
 }
 
 /* ------------------------------ MCP HTTP server ----------------------------- */

@@ -145,6 +145,11 @@ code {
   background: var(--bg-elev);
 }
 
+:root[data-platform='win'] .titlebar {
+  padding-left: 14px;
+  padding-right: 14px;
+}
+
 .titlebar button,
 .titlebar .no-drag {
   -webkit-app-region: no-drag;

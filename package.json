@@ -1,7 +1,7 @@
 {
   "name": "apitools",
   "private": true,
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "A local-first REST API debugger (Rust + Tauri) with import/export and MCP support",
   "type": "module",
   "scripts": {

@@ -1,6 +1,6 @@
 [package]
 name = "apitools"
-version = "1.0.3"
+version = "1.0.4"
 description = "A local-first REST API debugger with import/export and MCP support"
 authors = ["li_xin"]
 edition = "2021"

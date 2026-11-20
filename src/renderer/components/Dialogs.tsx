@@ -649,10 +649,11 @@ function SimpleKVTable({
   keyPlaceholder: string;
   valuePlaceholder: string;
 }) {
-  const rows = [...items, createKeyValue('', '')];
+  const virtual = React.useMemo(() => createKeyValue('', ''), [items.length]);
+  const rows = [...items, virtual];
   const update = (index: number, patch: Partial<KeyValue>) => {
     if (index >= items.length) {
-      onChange([...items, { ...createKeyValue('', ''), ...patch }]);
+      onChange([...items, { ...virtual, ...patch }]);
       return;
     }
     onChange(items.map((item, i) => (i === index ? { ...item, ...patch } : item)));

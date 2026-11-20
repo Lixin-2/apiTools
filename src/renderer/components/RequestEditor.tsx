@@ -51,12 +51,13 @@ function KeyValueEditor({
   keyPlaceholder?: string;
   valuePlaceholder?: string;
 }) {
-  const rows = [...items, createKeyValue('', '')];
+  // 虚拟行 id 保持不变，否则每次输入都会重建节点导致失焦
+  const virtual = React.useMemo(() => createKeyValue('', ''), [items.length]);
+  const rows = [...items, virtual];
 
   const update = (index: number, patch: Partial<KeyValue>) => {
     if (index >= items.length) {
-      const created = { ...createKeyValue('', ''), ...patch, id: createKeyValue().id };
-      onChange([...items, created]);
+      onChange([...items, { ...virtual, ...patch }]);
       return;
     }
     onChange(items.map((item, i) => (i === index ? { ...item, ...patch } : item)));
@@ -164,11 +165,12 @@ function FormFieldsEditor({
   onChange: (items: FormField[]) => void;
   allowFiles: boolean;
 }) {
-  const rows = [...items, emptyFormField()];
+  const virtual = React.useMemo(() => emptyFormField(), [items.length]);
+  const rows = [...items, virtual];
 
   const update = (index: number, patch: Partial<FormField>) => {
     if (index >= items.length) {
-      onChange([...items, { ...emptyFormField(), ...patch }]);
+      onChange([...items, { ...virtual, ...patch }]);
       return;
     }
     onChange(items.map((item, i) => (i === index ? { ...item, ...patch } : item)));

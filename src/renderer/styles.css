@@ -20,6 +20,11 @@
   --warning: #d97706;
   --shadow: 0 24px 70px rgba(24, 24, 50, 0.18);
   --shadow-soft: 0 10px 30px rgba(24, 24, 50, 0.1);
+  --json-key: #1d4ed8;
+  --json-string: #047857;
+  --json-number: #b45309;
+  --json-bool: #7c3aed;
+  --json-null: #be123c;
 }
 
 :root[data-theme='dark'] {
@@ -50,11 +55,6 @@
   --shadow-soft: 0 10px 30px rgba(0, 0, 0, 0.35);
   --radius: 10px;
   --mono: 'SF Mono', ui-monospace, 'JetBrains Mono', Menlo, monospace;
-  --json-key: #1d4ed8;
-  --json-string: #047857;
-  --json-number: #b45309;
-  --json-bool: #7c3aed;
-  --json-null: #be123c;
 }
 
 

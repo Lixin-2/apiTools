@@ -273,7 +273,7 @@ export function DonutChart({
     }
 
     ctx.fillStyle = tokens.text;
-    ctx.font = '600 13px -apple-system, system-ui, sans-serif';
+    ctx.font = '600 12px -apple-system, system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(total.toString(), cx, cy - 6);

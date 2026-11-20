@@ -25,10 +25,10 @@ function Metric({
   label: string;
   value: string | number;
   unit?: string;
-  tone?: 'ok' | 'danger' | 'warn';
+  tone?: 'ok' | 'danger' | 'warn' | 'accent';
 }) {
   return (
-    <div className="lt-metric">
+    <div className={`lt-metric ${tone ?? ''}`}>
       <div className="lt-metric-label">{label}</div>
       <div className={`lt-metric-value ${tone ?? ''}`}>
         {value}
@@ -218,7 +218,15 @@ export default function LoadTestDialog({ requestName, payload, onClose }: Props)
         </>
       }
     >
-      <div className="lt-config">
+      <div className="lt-shell">
+        <div className="lt-section">
+        <div className="lt-section-head">
+          <span className="lt-section-title">压测参数</span>
+          <span className="lt-target" title={`${payload.method} ${payload.url}`}>
+            {payload.method} {payload.url}
+          </span>
+        </div>
+        <div className="lt-config">
         <label className="lt-field">
           <span>并发数</span>
           <input
@@ -286,6 +294,7 @@ export default function LoadTestDialog({ requestName, payload, onClose }: Props)
             onChange={(event) => setRampUp(event.target.value.replace(/[^0-9]/g, ''))}
           />
         </label>
+        </div>
       </div>
 
       {error && (
@@ -302,14 +311,16 @@ export default function LoadTestDialog({ requestName, payload, onClose }: Props)
       ) : (
         <>
           <div className="lt-metrics">
-            <Metric label="QPS" value={snapshot.qps.toFixed(1)} />
+            <Metric label="QPS" value={snapshot.qps.toFixed(1)} tone="accent" />
             <Metric label="总请求" value={snapshot.total} />
             <Metric label="成功" value={snapshot.success} tone="ok" />
-            <Metric label="失败" value={snapshot.failed} tone={snapshot.failed ? 'danger' : undefined} />
-            <Metric label="平均" value={Math.round(snapshot.avgMs)} unit="ms" />
+            <Metric
+              label="失败"
+              value={snapshot.failed}
+              tone={snapshot.failed ? 'danger' : undefined}
+            />
+            <Metric label="平均延迟" value={Math.round(snapshot.avgMs)} unit="ms" />
             <Metric label="P95" value={snapshot.p95} unit="ms" />
-            <Metric label="P99" value={snapshot.p99} unit="ms" />
-            <Metric label="最大" value={snapshot.maxMs} unit="ms" />
           </div>
 
           <div className="lt-chart-card">
@@ -318,6 +329,7 @@ export default function LoadTestDialog({ requestName, payload, onClose }: Props)
               <span className="help">每 200ms 采样 · 已运行 {(snapshot.elapsedMs / 1000).toFixed(0)}s</span>
             </div>
             <LineChart
+              height={168}
               series={[
                 { label: 'QPS', color: CHART_COLORS.accent, values: series.qps, axis: 'left' },
                 { label: '平均延迟', color: CHART_COLORS.teal, values: series.avg, axis: 'right' },
@@ -329,17 +341,17 @@ export default function LoadTestDialog({ requestName, payload, onClose }: Props)
           <div className="lt-charts">
             <div className="lt-chart-card">
               <div className="lt-chart-title">延迟分布</div>
-              <BarChart buckets={snapshot.buckets} />
+              <BarChart buckets={snapshot.buckets} height={132} />
             </div>
             <div className="lt-chart-card">
               <div className="lt-chart-title">状态码分布</div>
-              <DonutChart items={statusItems} />
+              <DonutChart items={statusItems} height={132} />
             </div>
           </div>
 
           <div className="lt-detail">
-            <div>
-              <div className="lt-chart-title">延迟分位</div>
+            <div className="lt-card">
+              <div className="lt-card-title">延迟分位</div>
               <div className="lt-kv">
                 <span>P50</span>
                 <b>{snapshot.p50} ms</b>
@@ -353,13 +365,15 @@ export default function LoadTestDialog({ requestName, payload, onClose }: Props)
                 <b>{snapshot.concurrency}</b>
               </div>
             </div>
-            <div>
-              <div className="lt-chart-title">错误分布</div>
+            <div className="lt-card">
+              <div className="lt-card-title">错误分布</div>
               {errorEntries.length ? (
                 <div className="lt-kv">
                   {errorEntries.map(([key, value]) => (
                     <React.Fragment key={key}>
-                      <span>{key}</span>
+                      <span className="lt-ellipsis" title={key}>
+                        {key}
+                      </span>
                       <b className="danger">{value}</b>
                     </React.Fragment>
                   ))}
@@ -368,8 +382,8 @@ export default function LoadTestDialog({ requestName, payload, onClose }: Props)
                 <p className="help">没有错误</p>
               )}
             </div>
-            <div>
-              <div className="lt-chart-title">最慢请求</div>
+            <div className="lt-card">
+              <div className="lt-card-title">最慢请求</div>
               {snapshot.slowest.length ? (
                 <div className="lt-kv">
                   {snapshot.slowest.slice(0, 5).map((item, index) => (
@@ -388,6 +402,7 @@ export default function LoadTestDialog({ requestName, payload, onClose }: Props)
           </div>
         </>
       )}
+      </div>
     </Modal>
   );
 }

@@ -124,10 +124,15 @@ impl Metrics {
         if let Some(message) = &error {
             let key = if message.contains("timed out") || message.contains("timeout") {
                 "超时".to_string()
+            } else if message.contains("Connection refused") {
+                "连接被拒绝".to_string()
             } else if message.contains("connect") || message.contains("Connection") {
                 "连接失败".to_string()
             } else {
-                message.chars().take(60).collect::<String>()
+                // 去掉 "url: Network Error: xxx" 这类前缀，只保留原因
+                let reason = message.rsplit(": ").next().unwrap_or(message.as_str()).trim();
+                let reason = if reason.is_empty() { message.as_str() } else { reason };
+                reason.chars().take(48).collect::<String>()
             };
             *self.errors.entry(key).or_insert(0) += 1;
         }

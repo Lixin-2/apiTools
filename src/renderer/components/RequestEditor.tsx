@@ -11,6 +11,7 @@ import {
 import { splitUrlToParams, substituteVars } from '../../shared/url';
 import { Icon, METHOD_COLORS, MethodTag, Select } from './ui';
 import VarInput from './VarInput';
+import CodeEditor from './CodeEditor';
 
 interface Props {
   draft: ApiRequest;
@@ -507,16 +508,12 @@ export default function RequestEditor({
 
             {(draft.bodyType === 'json' || draft.bodyType === 'text') && (
               <>
-                <VarInput
-                  multiline
-                  className="code-area"
+                <CodeEditor
                   value={draft.body}
-                  variables={variables}
+                  language={draft.bodyType === 'json' ? 'json' : 'text'}
                   onChange={(body) => onChange({ body })}
                   placeholder={
-                    draft.bodyType === 'json'
-                      ? '{\n  "name": "value"\n}'
-                      : '请求体内容'
+                    draft.bodyType === 'json' ? '{\n  "name": "value"\n}' : '请求体内容'
                   }
                 />
                 {draft.bodyType === 'json' && jsonError && (

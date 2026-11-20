@@ -356,22 +356,32 @@ export default function App() {
 
   // 标签草稿持久化（响应体太大，不落盘）
   React.useEffect(() => {
-    try {
-      localStorage.setItem(
-        TABS_KEY,
-        JSON.stringify({
+    // 防抖：大请求体输入时不要每次击键都序列化
+    const timer = setTimeout(() => {
+      try {
+        const payload = JSON.stringify({
           version: TABS_VERSION,
           activeTabId,
-          tabs: tabs.map((tab) => ({
-            id: tab.id,
-            draft: tab.draft,
-            saved: stableStringify(tab.draft),
-          })),
-        }),
-      );
-    } catch {
-      /* 忽略配额错误 */
-    }
+          tabs: tabs.map((tab) => ({ id: tab.id, draft: tab.draft, saved: tab.saved })),
+        });
+        // 超过 2MB 时降级为只记标签顺序，避免 localStorage 写入卡顿
+        if (payload.length > 2_000_000) {
+          localStorage.setItem(
+            TABS_KEY,
+            JSON.stringify({
+              version: TABS_VERSION,
+              activeTabId,
+              tabs: tabs.map((tab) => ({ id: tab.id })),
+            }),
+          );
+          return;
+        }
+        localStorage.setItem(TABS_KEY, payload);
+      } catch {
+        /* 忽略配额错误 */
+      }
+    }, 600);
+    return () => clearTimeout(timer);
   }, [tabs, activeTabId]);
 
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? null;

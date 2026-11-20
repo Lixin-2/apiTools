@@ -38,6 +38,11 @@
   --accent: #7c5cff;
   --accent-text: #c3b5ff;
   --accent-soft: rgba(124, 92, 255, 0.16);
+  --json-key: #7aa2f7;
+  --json-string: #7ec699;
+  --json-number: #e0af68;
+  --json-bool: #bb9af7;
+  --json-null: #f7768e;
   --green: #22c55e;
   --danger: #ef4444;
   --warning: #f59e0b;
@@ -45,6 +50,11 @@
   --shadow-soft: 0 10px 30px rgba(0, 0, 0, 0.35);
   --radius: 10px;
   --mono: 'SF Mono', ui-monospace, 'JetBrains Mono', Menlo, monospace;
+  --json-key: #1d4ed8;
+  --json-string: #047857;
+  --json-number: #b45309;
+  --json-bool: #7c3aed;
+  --json-null: #be123c;
 }
 
 
@@ -1396,6 +1406,38 @@ body.resizing-row * {
   color: var(--text-faint);
 }
 
+.code-editor {
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-input);
+  overflow: hidden;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.code-editor:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.code-editor .cm-editor {
+  height: 100%;
+}
+.code-editor .cm-editor.cm-focused {
+  outline: none;
+}
+.body-editor .code-editor {
+  height: 260px;
+  flex: 0 0 auto;
+}
+.response-body.json-mode .code-editor {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+.response-body.json-mode .code-editor:focus-within {
+  box-shadow: none;
+}
+
 .code-area {
   width: 100%;
   min-height: 170px;
@@ -1693,18 +1735,138 @@ body.resizing-row * {
   margin: 0;
 }
 
+/* ------------------------------ json viewer -------------------------------- */
+
+.response-body.json-mode {
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.json-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.json-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-soft);
+  flex-wrap: wrap;
+}
+.json-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 6px 0 9px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  color: var(--text-faint);
+  min-width: 260px;
+}
+.json-search:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.json-search input {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text);
+}
+.json-search input::placeholder {
+  color: var(--text-faint);
+}
+.json-count {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
+}
+.json-icon-btn {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  border-radius: 5px;
+  display: grid;
+  place-items: center;
+  color: var(--text-dim);
+}
+.json-icon-btn:hover:not(:disabled) {
+  background: var(--bg-elev-2);
+  color: var(--text);
+}
+.json-icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.json-fold-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.json-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 12px 20px;
+}
 .json-line {
   display: flex;
-  gap: 12px;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 21px;
+  white-space: pre;
 }
-.line-no {
-  width: 26px;
-  flex: 0 0 26px;
+.json-line.active {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-radius: 4px;
+}
+.json-line .line-no {
+  width: 34px;
+  flex: 0 0 34px;
   text-align: right;
   color: var(--text-faint);
   opacity: 0.55;
   user-select: none;
   font-size: 11px;
+}
+.fold-btn {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  display: grid;
+  place-items: center;
+  border-radius: 3px;
+  color: var(--text-faint);
+  padding: 0;
+}
+.fold-btn.placeholder {
+  visibility: hidden;
+}
+.fold-btn:hover {
+  background: var(--bg-elev-3);
+  color: var(--text);
+}
+.json-text {
+  white-space: pre;
+}
+.fold-hint {
+  color: var(--text-faint);
+  font-style: italic;
+}
+.json-hit {
+  background: color-mix(in srgb, var(--warning) 45%, transparent);
+  color: inherit;
+  border-radius: 2px;
 }
 .json-key {
   color: #1d4ed8;

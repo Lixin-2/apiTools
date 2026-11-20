@@ -1,69 +1,17 @@
 import React from 'react';
 import { SendResponse } from '../../shared/types';
 import { CopyButton, formatBytes, Icon } from './ui';
+import CodeEditor, { EditorActions } from './CodeEditor';
 
 interface Props {
   response: SendResponse | null;
   sending: boolean;
 }
 
-const TOKEN_RE = /("(?:\\.|[^"\\])*")(\s*:)?|\b(true|false|null)\b|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g;
-
-function highlightJsonLine(line: string, index: number) {
-  const nodes: React.ReactNode[] = [];
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-  TOKEN_RE.lastIndex = 0;
-  while ((match = TOKEN_RE.exec(line))) {
-    if (match.index > lastIndex) {
-      nodes.push(
-        <span key={`t${index}-${lastIndex}`} className="json-punc">
-          {line.slice(lastIndex, match.index)}
-        </span>,
-      );
-    }
-    const [whole, str, colon, bool, num] = match;
-    if (str) {
-      nodes.push(
-        <span key={`s${index}-${match.index}`} className={colon ? 'json-key' : 'json-string'}>
-          {str}
-        </span>,
-      );
-      if (colon) {
-        nodes.push(
-          <span key={`c${index}-${match.index}`} className="json-punc">
-            {colon}
-          </span>,
-        );
-      }
-    } else if (bool) {
-      nodes.push(
-        <span key={`b${index}-${match.index}`} className={bool === 'null' ? 'json-null' : 'json-bool'}>
-          {bool}
-        </span>,
-      );
-    } else if (num) {
-      nodes.push(
-        <span key={`n${index}-${match.index}`} className="json-number">
-          {num}
-        </span>,
-      );
-    }
-    lastIndex = match.index + whole.length;
-  }
-  if (lastIndex < line.length) {
-    nodes.push(
-      <span key={`r${index}`} className="json-punc">
-        {line.slice(lastIndex)}
-      </span>,
-    );
-  }
-  return nodes;
-}
-
-export default function ResponseView({ response, sending }: Props) {
+function ResponseView({ response, sending }: Props) {
   const [tab, setTab] = React.useState<'body' | 'headers' | 'raw'>('body');
   const [savedPath, setSavedPath] = React.useState('');
+  const editorActions = React.useRef<EditorActions | null>(null);
   const [saveError, setSaveError] = React.useState('');
 
   const pretty = React.useMemo(() => {
@@ -189,6 +137,16 @@ export default function ResponseView({ response, sending }: Props) {
               {label}
             </button>
           ))}
+          {response.bodyKind === 'json' && tab === 'body' && (
+            <>
+              <button className="response-tab" onClick={() => editorActions.current?.foldAll()}>
+                折叠
+              </button>
+              <button className="response-tab" onClick={() => editorActions.current?.unfoldAll()}>
+                展开
+              </button>
+            </>
+          )}
           <CopyButton value={tab === 'raw' ? response.body : pretty} label="复制响应" />
           <button className="response-tab" onClick={download} title="下载到「下载」文件夹">
             <Icon name="download" size={11} />
@@ -197,7 +155,11 @@ export default function ResponseView({ response, sending }: Props) {
         </div>
       </div>
 
-      <div className="response-body">
+      <div
+        className={`response-body ${
+          tab === 'body' && response.bodyKind !== 'binary' ? 'json-mode' : ''
+        }`}
+      >
         {response.error && (
           <div className="result-box" style={{ marginBottom: 12, color: '#f87171' }}>
             {response.error}
@@ -255,20 +217,14 @@ export default function ResponseView({ response, sending }: Props) {
           </div>
         )}
 
-        {tab === 'body' &&
-          response.bodyKind !== 'binary' &&
-          (response.bodyKind === 'json' ? (
-            <pre className="code-block">
-              {pretty.split('\n').map((line, index) => (
-                <div className="json-line" key={index}>
-                  <span className="line-no">{index + 1}</span>
-                  <span>{highlightJsonLine(line, index)}</span>
-                </div>
-              ))}
-            </pre>
-          ) : (
-            <pre className="code-block">{response.body}</pre>
-          ))}
+        {tab === 'body' && response.bodyKind !== 'binary' && (
+          <CodeEditor
+            value={response.bodyKind === 'json' ? pretty : response.body}
+            language={response.bodyKind === 'json' ? 'json' : 'text'}
+            readOnly
+            actionsRef={editorActions}
+          />
+        )}
 
         {tab === 'headers' && (
           <table className="kv-table">
@@ -302,3 +258,5 @@ export default function ResponseView({ response, sending }: Props) {
     </div>
   );
 }
+
+export default React.memo(ResponseView);

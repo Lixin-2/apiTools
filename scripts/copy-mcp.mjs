@@ -1,7 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const root = path.resolve(import.meta.dirname, '..');
+const here = path.dirname(fileURLToPath(import.meta.url));
+const root = path.resolve(here, '..');
 const suffix = process.platform === 'win32' ? '.exe' : '';
 const source = path.join(root, 'src-tauri/target/release/apitools-mcp' + suffix);
 const targetDir = path.join(root, 'src-tauri/binaries');

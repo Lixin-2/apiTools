@@ -1,5 +1,8 @@
 name: release
 
+permissions:
+  contents: write
+
 on:
   workflow_dispatch:
   push:
@@ -42,8 +45,11 @@ jobs:
         with:
           workspaces: src-tauri
 
+      - name: Point lockfile at npmjs registry
+        run: node -e "const fs=require('fs');const p='package-lock.json';fs.writeFileSync(p, fs.readFileSync(p,'utf8').replace(/registry\.npmmirror\.com/g,'registry.npmjs.org'))"
+
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --registry=https://registry.npmjs.org
 
       - name: Build app and installer
         run: ${{ matrix.build }}

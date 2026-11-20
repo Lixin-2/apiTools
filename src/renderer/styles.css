@@ -1202,6 +1202,12 @@ body.resizing-row * {
   overflow: auto;
   flex: 1 1 auto;
   min-height: 80px;
+  display: flex;
+  flex-direction: column;
+}
+/* 表格等其它内容按内容高度排布，只有编辑器自适应剩余空间 */
+.editor > * {
+  flex: 0 0 auto;
 }
 
 .kv-table {
@@ -1294,6 +1300,10 @@ body.resizing-row * {
 
 .body-editor {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 .body-toolbar {
   display: flex;
@@ -1426,7 +1436,13 @@ body.resizing-row * {
   outline: none;
 }
 .body-editor .code-editor {
-  height: 260px;
+  flex: 1 1 auto;
+  min-height: 150px;
+}
+.body-editor > .body-toolbar,
+.body-editor > .body-error,
+.body-editor > .add-row,
+.body-editor > .help {
   flex: 0 0 auto;
 }
 .response-body.json-mode .code-editor {

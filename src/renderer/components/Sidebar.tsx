@@ -1,6 +1,7 @@
 import React from 'react';
 import { ApiRequest, Collection, Workspace } from '../../shared/types';
 import { Icon, MethodTag, Select } from './ui';
+import { useContextMenu } from './ContextMenu';
 
 interface SidebarProps {
   workspace: Workspace | null;
@@ -21,6 +22,10 @@ interface SidebarProps {
   onRenameCollection: (collection: Collection) => void;
   onExport: (collection: Collection) => void;
   onOpenMcp: () => void;
+}
+
+function toggleLabel(collapsed: boolean) {
+  return collapsed ? '展开目录' : '折叠目录';
 }
 
 interface FolderNode {
@@ -71,6 +76,7 @@ function buildTree(collection: Collection, requests: ApiRequest[]): FolderNode {
 }
 
 export default function Sidebar(props: SidebarProps) {
+  const menu = useContextMenu();
   const { workspace, selectedId, port } = props;
   const [query, setQuery] = React.useState('');
   const [collapsed, setCollapsed] = React.useState<Record<string, boolean>>({});
@@ -107,6 +113,15 @@ export default function Sidebar(props: SidebarProps) {
       key={req.id}
       className={`request-row ${inFolder ? 'nested' : ''} ${selectedId === req.id ? 'active' : ''}`}
       onClick={() => props.onSelect(req)}
+          onContextMenu={(event) =>
+            menu.open(event, [
+              { label: '打开', icon: 'send', onClick: () => props.onSelect(req) },
+              { label: '复制 URL', icon: 'copy', onClick: () => navigator.clipboard.writeText(req.url) },
+              { label: '复制名称', icon: 'copy', onClick: () => navigator.clipboard.writeText(req.name) },
+              { separator: true },
+              { label: '删除请求', icon: 'trash', danger: true, onClick: () => props.onDeleteRequest(req.id) },
+            ])
+          }
       title={req.url}
     >
       <MethodTag method={req.method} mini />
@@ -128,6 +143,17 @@ export default function Sidebar(props: SidebarProps) {
           className="folder-row"
           style={{ paddingLeft: 14 + node.depth * 14 }}
           onClick={() => toggleFolder(key)}
+          onContextMenu={(event) =>
+            menu.open(event, [
+              { label: '在此目录新建请求', icon: 'plus', onClick: () => props.onCreateRequest(collection.id, node.path) },
+              { label: '新建子目录', icon: 'folder', onClick: () => props.onCreateFolder(collection, node.path) },
+              { separator: true },
+              { label: toggleLabel(isCollapsed), icon: 'chevron', onClick: () => toggleFolder(key) },
+              { label: '重命名目录', icon: 'edit', onClick: () => props.onRenameFolder(collection, node.path) },
+              { separator: true },
+              { label: '删除目录', icon: 'trash', danger: true, onClick: () => props.onDeleteFolder(collection, node.path) },
+            ])
+          }
         >
           <span className={`chevron ${isCollapsed ? '' : 'open'}`}>
             <Icon name="chevron" size={10} />
@@ -253,7 +279,21 @@ export default function Sidebar(props: SidebarProps) {
 
           return (
             <div className="collection" key={collection.id}>
-              <div className="collection-row" onClick={() => toggleCollection(collection.id)}>
+              <div
+                className="collection-row"
+                onClick={() => toggleCollection(collection.id)}
+                onContextMenu={(event) =>
+                  menu.open(event, [
+                    { label: '新建请求', icon: 'plus', onClick: () => props.onCreateRequest(collection.id) },
+                    { label: '新建目录', icon: 'folder', onClick: () => props.onCreateFolder(collection) },
+                    { separator: true },
+                    { label: '重命名集合', icon: 'edit', onClick: () => props.onRenameCollection(collection) },
+                    { label: '导出集合', icon: 'download', onClick: () => props.onExport(collection) },
+                    { separator: true },
+                    { label: '删除集合', icon: 'trash', danger: true, onClick: () => props.onDeleteCollection(collection.id) },
+                  ])
+                }
+              >
                 <span className={`chevron ${isCollapsed ? '' : 'open'}`}>
                   <Icon name="chevron" size={11} />
                 </span>
@@ -318,6 +358,7 @@ export default function Sidebar(props: SidebarProps) {
           <Icon name="robot" size={14} />
         </button>
       </div>
+    {menu.node}
     </aside>
   );
 }

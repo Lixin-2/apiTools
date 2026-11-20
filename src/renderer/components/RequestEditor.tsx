@@ -12,6 +12,7 @@ import { splitUrlToParams, substituteVars } from '../../shared/url';
 import { Icon, METHOD_COLORS, MethodTag, Select } from './ui';
 import VarInput from './VarInput';
 import CodeEditor, { EditorActions } from './CodeEditor';
+import { useContextMenu } from './ContextMenu';
 
 interface Props {
   draft: ApiRequest;
@@ -311,6 +312,7 @@ export default function RequestEditor({
 }: Props) {
   const [tab, setTab] = React.useState<TabKey>('params');
   const bodyActions = React.useRef<EditorActions | null>(null);
+  const bodyMenu = useContextMenu();
 
   const activeParams = draft.params.filter((p) => p.enabled && p.key).length;
   const activeHeaders = draft.headers.filter((h) => h.enabled && h.key).length;
@@ -486,7 +488,33 @@ export default function RequestEditor({
         )}
 
         {tab === 'body' && (
-          <div className="body-editor">
+          <div
+            className="body-editor"
+            onContextMenu={(event) => {
+              if (draft.bodyType !== 'json' && draft.bodyType !== 'text') return;
+              bodyMenu.open(event, [
+                { label: '格式化', icon: 'spark', onClick: formatBody },
+                {
+                  label: '搜索',
+                  icon: 'search',
+                  shortcut: '⌘F',
+                  onClick: () => bodyActions.current?.openSearch(),
+                },
+                { separator: true },
+                {
+                  label: '全选内容',
+                  icon: 'copy',
+                  onClick: () => bodyActions.current?.selectAll(),
+                },
+                {
+                  label: '清空请求体',
+                  icon: 'trash',
+                  danger: true,
+                  onClick: () => onChange({ body: '' }),
+                },
+              ]);
+            }}
+          >
             <div className="body-toolbar">
               <div className="seg">
                 {BODY_TYPES.map((item) => (
@@ -660,6 +688,7 @@ export default function RequestEditor({
           />
         )}
       </div>
+      {bodyMenu.node}
     </div>
   );
 }

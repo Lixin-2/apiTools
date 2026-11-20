@@ -24,6 +24,7 @@ import {
 } from './components/Dialogs';
 import { AppMark, Icon, METHOD_COLORS, Select } from './components/ui';
 import LoadTestDialog from './components/LoadTestDialog';
+import { useContextMenu } from './components/ContextMenu';
 
 type DialogKey = 'import' | 'mcp' | 'env' | null;
 type ThemeMode = 'light' | 'dark' | 'system';
@@ -117,12 +118,19 @@ function TabBar({
   activeId,
   onActivate,
   onClose,
+  onCloseOthers,
+  onCloseAll,
+  onSave,
 }: {
   tabs: RequestTab[];
   activeId: string | null;
   onActivate: (id: string) => void;
   onClose: (id: string) => void;
+  onCloseOthers: (id: string) => void;
+  onCloseAll: () => void;
+  onSave: () => void;
 }) {
+  const menu = useContextMenu();
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const [overflow, setOverflow] = React.useState(false);
 
@@ -185,6 +193,15 @@ function TabBar({
               onAuxClick={(event) => {
                 if (event.button === 1) onClose(tab.id);
               }}
+              onContextMenu={(event) =>
+                menu.open(event, [
+                  { label: '关闭标签', icon: 'close', shortcut: '⌘W', onClick: () => onClose(tab.id) },
+                  { label: '关闭其他标签', icon: 'close', onClick: () => onCloseOthers(tab.id) },
+                  { label: '关闭全部标签', icon: 'close', onClick: onCloseAll },
+                  { separator: true },
+                  { label: '保存修改', icon: 'check', shortcut: '⌘S', onClick: onSave },
+                ])
+              }
               title={`${tab.draft.method} ${tab.draft.url || tab.draft.name}`}
             >
               <span
@@ -214,6 +231,7 @@ function TabBar({
           <Icon name="chevron" size={11} />
         </button>
       )}
+      {menu.node}
     </div>
   );
 }
@@ -451,6 +469,24 @@ export default function App() {
     if (activeTabId === id) {
       setActiveTabId(next[Math.min(index, next.length - 1)]?.id ?? null);
     }
+  };
+
+  const closeOtherTabs = (id: string) => {
+    const keep = tabs.find((tab) => tab.id === id);
+    const others = tabs.filter((tab) => tab.id !== id);
+    if (others.some((tab) => isTabDirty(tab))) {
+      if (!window.confirm('其他标签有未保存的修改，关闭后会丢失。继续？')) return;
+    }
+    setTabs(keep ? [keep] : []);
+    setActiveTabId(keep?.id ?? null);
+  };
+
+  const closeAllTabs = () => {
+    if (tabs.some((tab) => isTabDirty(tab))) {
+      if (!window.confirm('有未保存的修改，关闭后会丢失。继续？')) return;
+    }
+    setTabs([]);
+    setActiveTabId(null);
   };
 
   const resetTabs = (first: ApiRequest | null) => {
@@ -906,6 +942,9 @@ export default function App() {
                 activeId={activeTabId}
                 onActivate={setActiveTabId}
                 onClose={closeTab}
+                onCloseOthers={closeOtherTabs}
+                onCloseAll={closeAllTabs}
+                onSave={() => saveDraft()}
               />
               <div className="editor-pane" style={{ height: editorHeight }}>
               <RequestEditor

@@ -113,6 +113,7 @@ export interface EditorActions {
   foldAll: () => void;
   unfoldAll: () => void;
   openSearch: () => void;
+  selectAll: () => void;
 }
 
 interface Props {
@@ -240,6 +241,8 @@ export default function CodeEditor({
         foldAll: () => foldAll(view),
         unfoldAll: () => unfoldAll(view),
         openSearch,
+        selectAll: () =>
+          view.dispatch({ selection: { anchor: 0, head: view.state.doc.length } }),
       };
     }
 

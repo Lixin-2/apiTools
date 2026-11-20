@@ -2,6 +2,7 @@ import React from 'react';
 import { SendResponse } from '../../shared/types';
 import { CopyButton, formatBytes, Icon } from './ui';
 import CodeEditor, { EditorActions } from './CodeEditor';
+import { useContextMenu } from './ContextMenu';
 
 interface Props {
   response: SendResponse | null;
@@ -12,6 +13,7 @@ function ResponseView({ response, sending }: Props) {
   const [tab, setTab] = React.useState<'body' | 'headers' | 'raw'>('body');
   const [savedPath, setSavedPath] = React.useState('');
   const editorActions = React.useRef<EditorActions | null>(null);
+  const menu = useContextMenu();
   const [saveError, setSaveError] = React.useState('');
 
   const pretty = React.useMemo(() => {
@@ -169,6 +171,39 @@ function ResponseView({ response, sending }: Props) {
         className={`response-body ${
           tab === 'body' && response.bodyKind !== 'binary' ? 'json-mode' : ''
         }`}
+        onContextMenu={(event) => {
+          if (tab !== 'body' || response.bodyKind === 'binary') return;
+          menu.open(event, [
+            {
+              label: '复制响应内容',
+              icon: 'copy',
+              onClick: () =>
+                navigator.clipboard.writeText(
+                  response.bodyKind === 'json' ? pretty : response.body,
+                ),
+            },
+            {
+              label: '搜索',
+              icon: 'search',
+              shortcut: '⌘F',
+              onClick: () => editorActions.current?.openSearch(),
+            },
+            { separator: true },
+            {
+              label: '折叠全部',
+              icon: 'chevron',
+              onClick: () => editorActions.current?.foldAll(),
+            },
+            {
+              label: '展开全部',
+              icon: 'chevron',
+              onClick: () => editorActions.current?.unfoldAll(),
+            },
+            { separator: true },
+            { label: '下载响应', icon: 'download', onClick: download },
+            { label: '保存到…', icon: 'file', onClick: saveAs },
+          ]);
+        }}
       >
         {response.error && (
           <div className="result-box" style={{ marginBottom: 12, color: '#f87171' }}>
@@ -265,6 +300,7 @@ function ResponseView({ response, sending }: Props) {
           </pre>
         )}
       </div>
+      {menu.node}
     </div>
   );
 }

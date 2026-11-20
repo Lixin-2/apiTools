@@ -114,6 +114,8 @@ export interface EditorActions {
   unfoldAll: () => void;
   openSearch: () => void;
   selectAll: () => void;
+  copySelection: () => void;
+  paste: () => Promise<void>;
 }
 
 interface Props {
@@ -243,6 +245,23 @@ export default function CodeEditor({
         openSearch,
         selectAll: () =>
           view.dispatch({ selection: { anchor: 0, head: view.state.doc.length } }),
+        copySelection: () => {
+          const { from, to } = view.state.selection.main;
+          if (from !== to) {
+            void navigator.clipboard.writeText(view.state.sliceDoc(from, to));
+          }
+        },
+        paste: async () => {
+          const text = await navigator.clipboard.readText().catch(() => '');
+          if (!text) return;
+          const { from, to } = view.state.selection.main;
+          view.dispatch({
+            changes: { from, to, insert: text },
+            selection: { anchor: from + text.length },
+            scrollIntoView: true,
+          });
+          view.focus();
+        },
       };
     }
 

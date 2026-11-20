@@ -497,6 +497,17 @@ export default function RequestEditor({
               bodyMenu.open(event, [
                 { label: '格式化', icon: 'spark', onClick: formatBody },
                 {
+                  label: '复制选中',
+                  icon: 'copy',
+                  onClick: () => bodyActions.current?.copySelection(),
+                },
+                {
+                  label: '粘贴',
+                  icon: 'download',
+                  shortcut: '⌘V',
+                  onClick: () => void bodyActions.current?.paste(),
+                },
+                {
                   label: '搜索',
                   icon: 'search',
                   shortcut: '⌘F',

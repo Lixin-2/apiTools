@@ -183,6 +183,11 @@ function ResponseView({ response, sending }: Props) {
                 ),
             },
             {
+              label: '复制选中内容',
+              icon: 'copy',
+              onClick: () => editorActions.current?.copySelection(),
+            },
+            {
               label: '搜索',
               icon: 'search',
               shortcut: '⌘F',

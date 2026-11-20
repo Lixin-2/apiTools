@@ -253,6 +253,75 @@ export default function App() {
     onSubmit: (value: string) => void;
   } | null>(null);
 
+  // 输入框/多行文本：拦截系统右键菜单，换成剪贴板菜单
+  const fieldMenu = useContextMenu();
+  React.useEffect(() => {
+    const onContextMenu = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      const field = target?.closest('input, textarea') as
+        | HTMLInputElement
+        | HTMLTextAreaElement
+        | null;
+      if (!field) return;
+      event.preventDefault();
+      const start = field.selectionStart ?? 0;
+      const end = field.selectionEnd ?? 0;
+      const selected = field.value.slice(start, end);
+      const editable = !field.readOnly && !field.disabled;
+
+      const applyText = (text: string) => {
+        const next = field.value.slice(0, start) + text + field.value.slice(end);
+        const proto =
+          field instanceof HTMLTextAreaElement
+            ? HTMLTextAreaElement.prototype
+            : HTMLInputElement.prototype;
+        Object.getOwnPropertyDescriptor(proto, 'value')?.set?.call(field, next);
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+        field.focus();
+        const caret = start + text.length;
+        field.setSelectionRange(caret, caret);
+      };
+
+      fieldMenu.open(event as unknown as React.MouseEvent, [
+        {
+          label: '剪切',
+          shortcut: '⌘X',
+          disabled: !selected || !editable,
+          onClick: () => {
+            void navigator.clipboard.writeText(selected);
+            applyText('');
+          },
+        },
+        {
+          label: '复制',
+          shortcut: '⌘C',
+          disabled: !selected,
+          onClick: () => void navigator.clipboard.writeText(selected),
+        },
+        {
+          label: '粘贴',
+          shortcut: '⌘V',
+          disabled: !editable,
+          onClick: async () => {
+            const text = await navigator.clipboard.readText().catch(() => '');
+            if (text) applyText(text);
+          },
+        },
+        { separator: true },
+        {
+          label: '全选',
+          shortcut: '⌘A',
+          onClick: () => {
+            field.focus();
+            field.select();
+          },
+        },
+      ]);
+    };
+    document.addEventListener('contextmenu', onContextMenu);
+    return () => document.removeEventListener('contextmenu', onContextMenu);
+  }, [fieldMenu]);
+
   const [themeMode, setThemeMode] = React.useState<ThemeMode>(() => {
     const saved = localStorage.getItem('apitools-theme-mode');
     if (saved === 'light' || saved === 'dark' || saved === 'system') return saved;
@@ -1057,6 +1126,8 @@ export default function App() {
           }}
         />
       )}
+
+      {fieldMenu.node}
 
       {loadTestOpen && draft && (
         <LoadTestDialog

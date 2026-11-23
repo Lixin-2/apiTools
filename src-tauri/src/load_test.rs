@@ -40,6 +40,12 @@ pub struct LoadTestConfig {
     /// 随机模式：每隔多少秒重新采样一次速率
     #[serde(default = "default_change_secs")]
     pub rps_change_secs: u64,
+    /// 报文池 zip：解压后每份文件作为一次请求体，按文件名顺序轮询
+    #[serde(default)]
+    pub body_pool_zip: Option<String>,
+    /// 压测变量，替换 URL / 请求头 / 请求体中的 ${name}
+    #[serde(default)]
+    pub variables: Vec<crate::model::KeyValue>,
     #[serde(default)]
     pub ramp_up_ms: u64,
     #[serde(default)]
@@ -52,6 +58,85 @@ fn default_concurrency() -> usize {
 
 fn default_change_secs() -> u64 {
     5
+}
+
+/// 读取 zip 报文池：过滤目录与 macOS 元数据，按文件名排序
+pub fn load_body_pool(path: &str) -> Result<Vec<Vec<u8>>, String> {
+    let file = std::fs::File::open(path).map_err(|e| format!("打开 zip 失败: {e}"))?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("解析 zip 失败: {e}"))?;
+    let mut entries: Vec<(String, Vec<u8>)> = Vec::new();
+    let mut total: usize = 0;
+    for index in 0..archive.len() {
+        let mut item = archive
+            .by_index(index)
+            .map_err(|e| format!("读取 zip 条目失败: {e}"))?;
+        if item.is_dir() {
+            continue;
+        }
+        let name = item.name().to_string();
+        if name.starts_with("__MACOSX/") || name.rsplit('/').next().unwrap_or("").starts_with("._") {
+            continue;
+        }
+        let mut buffer = Vec::new();
+        std::io::Read::read_to_end(&mut item, &mut buffer)
+            .map_err(|e| format!("读取 {name} 失败: {e}"))?;
+        total += buffer.len();
+        if total > 200 * 1024 * 1024 {
+            return Err("报文池总大小超过 200MB，请拆分后再压测".to_string());
+        }
+        entries.push((name, buffer));
+    }
+    if entries.is_empty() {
+        return Err("zip 中没有可用报文文件".to_string());
+    }
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(entries.into_iter().map(|(_, bytes)| bytes).collect())
+}
+
+pub fn body_pool_info(path: &str) -> Result<(usize, usize), String> {
+    let pool = load_body_pool(path)?;
+    let bytes = pool.iter().map(|item| item.len()).sum();
+    Ok((pool.len(), bytes))
+}
+
+/// 替换 ${name} 形式的变量；未定义的原样保留
+pub fn substitute_vars(text: &str, vars: &std::collections::HashMap<String, String>) -> String {
+    if vars.is_empty() || !text.contains("${") {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(start) = rest.find("${") {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + 2..];
+        match after.find('}') {
+            Some(end) => {
+                let key = &after[..end];
+                match vars.get(key) {
+                    Some(value) => out.push_str(value),
+                    None => out.push_str(&rest[start..start + 2 + end + 1]),
+                }
+                rest = &after[end + 1..];
+            }
+            None => {
+                out.push_str(&rest[start..]);
+                rest = "";
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// 报文可能是二进制，能按 UTF-8 解码才做变量替换
+fn substitute_bytes(bytes: Vec<u8>, vars: &std::collections::HashMap<String, String>) -> Vec<u8> {
+    if vars.is_empty() {
+        return bytes;
+    }
+    match String::from_utf8(bytes) {
+        Ok(text) => substitute_vars(&text, vars).into_bytes(),
+        Err(err) => err.into_bytes(),
+    }
 }
 
 fn rate_mode_of(config: &LoadTestConfig) -> &'static str {
@@ -327,7 +412,7 @@ fn request_parts(config: &LoadTestConfig) -> (BTreeMap<String, String>, Option<S
 }
 
 /// 跑一轮压测，期间每 200ms 通过事件推送一次快照
-pub async fn run(app: tauri::AppHandle, config: LoadTestConfig) {
+pub async fn run(app: tauri::AppHandle, config: LoadTestConfig, body_pool: Arc<Vec<Vec<u8>>>) {
     use tauri::Emitter;
 
     let concurrency = config.concurrency.clamp(1, MAX_CONCURRENCY);
@@ -375,6 +460,14 @@ pub async fn run(app: tauri::AppHandle, config: LoadTestConfig) {
         .duration_ms
         .map(|ms| started + Duration::from_millis(ms.max(500)));
     let (headers, body, parts) = request_parts(&config);
+    let var_map: Arc<std::collections::HashMap<String, String>> = Arc::new(
+        config
+            .variables
+            .iter()
+            .filter(|item| item.enabled && !item.key.trim().is_empty())
+            .map(|item| (item.key.clone(), item.value.clone()))
+            .collect(),
+    );
     let config = Arc::new(config);
 
     let mut handles = Vec::new();
@@ -387,6 +480,8 @@ pub async fn run(app: tauri::AppHandle, config: LoadTestConfig) {
         let worker_headers = headers.clone();
         let worker_body = body.clone();
         let worker_parts = parts.clone();
+        let worker_pool = body_pool.clone();
+        let worker_vars = var_map.clone();
         let ramp = if config.ramp_up_ms > 0 {
             Duration::from_millis(config.ramp_up_ms * index as u64 / concurrency.max(1) as u64)
         } else {
@@ -411,21 +506,43 @@ pub async fn run(app: tauri::AppHandle, config: LoadTestConfig) {
                         break;
                     }
                 }
-                worker_sent.fetch_add(1, Ordering::Relaxed);
+                let sent_index = worker_sent.fetch_add(1, Ordering::Relaxed);
 
                 let method = worker_config.method.clone();
-                let url = worker_config.url.clone();
-                let headers = worker_headers.clone();
-                let body = worker_body.clone();
+                // 变量替换后再发送
+                let url = substitute_vars(&worker_config.url, &worker_vars);
+                let headers: BTreeMap<String, String> = worker_headers
+                    .iter()
+                    .map(|(key, value)| {
+                        (
+                            substitute_vars(key, &worker_vars),
+                            substitute_vars(value, &worker_vars),
+                        )
+                    })
+                    .collect();
+                // 有报文池时按顺序轮询取一份，否则用面板里的请求体
+                let payload: Option<Vec<u8>> = if worker_pool.is_empty() {
+                    worker_body.as_ref().map(|text| text.as_bytes().to_vec())
+                } else {
+                    Some(worker_pool[(sent_index as usize) % worker_pool.len()].clone())
+                };
+                let payload = payload.map(|bytes| substitute_bytes(bytes, &worker_vars));
                 let parts = worker_parts.clone();
                 let timeout = worker_config.timeout_ms;
 
                 let begin = Instant::now();
                 let result = tokio::task::spawn_blocking(move || {
-                    if parts.is_empty() {
-                        http_client::execute(&method, &url, &headers, body.as_deref(), timeout)
-                    } else {
+                    if !parts.is_empty() {
                         http_client::execute_multipart(&method, &url, &headers, &parts, timeout)
+                    } else {
+                        match payload {
+                            Some(bytes) => {
+                                http_client::execute_raw(&method, &url, &headers, bytes, timeout)
+                            }
+                            None => {
+                                http_client::execute(&method, &url, &headers, None, timeout)
+                            }
+                        }
                     }
                 })
                 .await;

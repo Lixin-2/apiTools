@@ -244,6 +244,10 @@ export interface LoadTestConfig {
   maxRps?: number;
   /** 随机模式重新采样间隔（秒） */
   rpsChangeSecs?: number;
+  /** 报文池 zip：每份文件作为一次请求体，按文件名顺序轮询 */
+  bodyPoolZip?: string;
+  /** 压测变量，替换 ${name} */
+  variables?: KeyValue[];
   rampUpMs?: number;
   timeoutMs?: number;
 }

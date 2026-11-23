@@ -2651,3 +2651,49 @@ body.resizing-row * {
   margin: 4px 8px;
   background: var(--border-soft);
 }
+
+.lt-pool {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 11px;
+  background: var(--bg-elev-2);
+}
+.lt-pool-file {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 5px 3px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+}
+.lt-pool-name {
+  font-size: 12px;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lt-vars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 11px;
+  background: var(--bg-elev-2);
+}
+.lt-var-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 26px;
+  gap: 8px;
+  align-items: center;
+}
+.lt-var-row .text-input {
+  height: 30px;
+  font-size: 12px;
+}

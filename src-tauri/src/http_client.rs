@@ -406,6 +406,17 @@ fn send_bytes(
     }
 }
 
+/// 发送原始字节请求体（压测报文池使用）
+pub fn execute_raw(
+    method: &str,
+    url: &str,
+    headers: &BTreeMap<String, String>,
+    payload: Vec<u8>,
+    timeout_ms: Option<u64>,
+) -> SendResponse {
+    send_bytes(method, url, headers.clone(), payload, timeout_ms)
+}
+
 /// 发送 multipart/form-data 请求（表单字段可包含文件）
 pub fn execute_multipart(
     method: &str,

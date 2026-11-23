@@ -39,7 +39,12 @@ export function installTauriBridge(): void {
     deleteRequest: (id) => invoke('delete_request', { id }),
     getRequest: (id) => invoke('get_request', { id }),
     sendRequest: (payload) => invoke('send_request', { payload }),
-    pickFile: () => invoke('pick_file'),
+    pickFile: (options) =>
+      invoke('pick_file', {
+        title: options?.title,
+        extensions: options?.extensions,
+      }),
+    inspectBodyPool: (path) => invoke('inspect_body_pool', { path }),
     saveResponseFile: (payload) => invoke('save_response_file', payload),
     downloadResponseFile: (payload) => invoke('download_response_file', payload),
     revealPath: (path) => invoke('reveal_path', { path }),

@@ -57,6 +57,11 @@ export default function LoadTestDialog({ requestName, payload, onClose }: Props)
     p95: [],
   });
   const [error, setError] = React.useState('');
+  const [poolPath, setPoolPath] = React.useState('');
+  const [poolName, setPoolName] = React.useState('');
+  const [poolInfo, setPoolInfo] = React.useState<{ count: number; bytes: number } | null>(null);
+  const [poolError, setPoolError] = React.useState('');
+  const [vars, setVars] = React.useState<{ key: string; value: string }[]>([{ key: '', value: '' }]);
 
   React.useEffect(() => {
     let disposeProgress: (() => void) | null = null;
@@ -96,6 +101,35 @@ export default function LoadTestDialog({ requestName, payload, onClose }: Props)
       disposeFinished?.();
     };
   }, []);
+
+  const pickPool = async () => {
+    setPoolError('');
+    const file = await window.api.pickFile({ title: '选择报文 zip', extensions: ['zip'] });
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.zip')) {
+      setPoolError('请选择 .zip 文件');
+      return;
+    }
+    try {
+      const info = await window.api.inspectBodyPool(file.path);
+      setPoolPath(file.path);
+      setPoolName(file.name);
+      setPoolInfo(info);
+    } catch (err: any) {
+      setPoolError(err?.message ?? String(err));
+    }
+  };
+
+  const clearPool = () => {
+    setPoolPath('');
+    setPoolName('');
+    setPoolInfo(null);
+    setPoolError('');
+  };
+
+  const updateVar = (index: number, patch: { key?: string; value?: string }) => {
+    setVars((prev) => prev.map((item, i) => (i === index ? { ...item, ...patch } : item)));
+  };
 
   const start = async () => {
     setError('');
@@ -138,6 +172,15 @@ export default function LoadTestDialog({ requestName, payload, onClose }: Props)
         maxRps: rateMode === 'random' ? num(maxRps) : 0,
         rpsChangeSecs: rateMode === 'random' ? Math.max(1, num(changeSecs)) : 0,
         rampUpMs: num(rampUp) * 1000,
+        bodyPoolZip: poolPath || undefined,
+        variables: vars
+          .filter((item) => item.key.trim())
+          .map((item, index) => ({
+            id: `lt_var_${index}`,
+            key: item.key.trim(),
+            value: item.value,
+            enabled: true,
+          })),
       });
       setRunning(true);
     } catch (err: any) {
@@ -369,6 +412,90 @@ export default function LoadTestDialog({ requestName, payload, onClose }: Props)
             onChange={(event) => setRampUp(event.target.value.replace(/[^0-9]/g, ''))}
           />
         </label>
+        </div>
+      </div>
+
+      <div className="lt-section">
+        <div className="lt-section-head">
+          <span className="lt-section-title">报文数据（可选）</span>
+          {poolInfo && (
+            <span className="help">
+              {poolInfo.count} 份 · {formatBytes(poolInfo.bytes)}
+            </span>
+          )}
+        </div>
+        <div className="lt-pool">
+          <button className="chip-button" onClick={pickPool} disabled={running}>
+            <Icon name="file" size={12} />
+            {poolPath ? '更换 zip' : '选择 zip 报文'}
+          </button>
+          {poolPath ? (
+            <div className="lt-pool-file">
+              <span className="lt-pool-name" title={poolPath}>
+                {poolName}
+              </span>
+              <button className="icon-btn" title="移除报文池" onClick={clearPool} disabled={running}>
+                <Icon name="close" size={11} />
+              </button>
+            </div>
+          ) : (
+            <span className="help">
+              按文件名顺序轮询，每份文件作为一次请求体；不选则使用请求体面板里的内容
+            </span>
+          )}
+        </div>
+        {poolError && (
+          <div className="body-error">
+            <Icon name="info" size={12} />
+            <span>{poolError}</span>
+          </div>
+        )}
+      </div>
+
+      <div className="lt-section">
+        <div className="lt-section-head">
+          <span className="lt-section-title">变量（可选）</span>
+          <span className="help">
+            用 {'${变量名}'} 引用，作用于 URL / 请求头 / 报文内容
+          </span>
+        </div>
+        <div className="lt-vars">
+          {vars.map((item, index) => (
+            <div className="lt-var-row" key={index}>
+              <input
+                className="text-input"
+                value={item.key}
+                placeholder="变量名，如 userId"
+                spellCheck={false}
+                disabled={running}
+                onChange={(event) => updateVar(index, { key: event.target.value })}
+              />
+              <input
+                className="text-input"
+                value={item.value}
+                placeholder="值，如 1001"
+                spellCheck={false}
+                disabled={running}
+                onChange={(event) => updateVar(index, { value: event.target.value })}
+              />
+              <button
+                className="icon-btn danger"
+                title="删除变量"
+                disabled={running}
+                onClick={() => setVars((prev) => prev.filter((_, i) => i !== index))}
+              >
+                <Icon name="close" size={11} />
+              </button>
+            </div>
+          ))}
+          <button
+            className="chip-button ghost"
+            disabled={running}
+            onClick={() => setVars((prev) => [...prev, { key: '', value: '' }])}
+          >
+            <Icon name="plus" size={12} />
+            添加变量
+          </button>
         </div>
       </div>
 

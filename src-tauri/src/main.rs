@@ -6,7 +6,7 @@ use apitools_core::{exporters, http_client, importers, load_test, model::*, stor
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
@@ -535,11 +535,30 @@ async fn start_load_test(app: tauri::AppHandle, config: Value) -> Result<Value, 
         serde_json::from_value(config).map_err(|e| format!("参数错误: {e}"))?;
     load_test::validate(&parsed)?;
     load_test::stop_current();
+
+    // 报文池在命令里先解析，格式或体积有问题可以直接反馈给前端
+    let pool = match parsed
+        .body_pool_zip
+        .as_ref()
+        .map(|path| path.trim().to_string())
+        .filter(|path| !path.is_empty())
+    {
+        Some(path) => Arc::new(load_test::load_body_pool(&path)?),
+        None => Arc::new(Vec::new()),
+    };
+    let pool_size = pool.len();
+
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
-        load_test::run(handle, parsed).await;
+        load_test::run(handle, parsed, pool).await;
     });
-    Ok(json!({ "ok": true }))
+    Ok(json!({ "ok": true, "bodyPool": pool_size }))
+}
+
+#[tauri::command]
+fn inspect_body_pool(path: String) -> Result<Value, String> {
+    let (count, bytes) = load_test::body_pool_info(&path)?;
+    Ok(json!({ "count": count, "bytes": bytes }))
 }
 
 #[tauri::command]
@@ -548,12 +567,23 @@ fn stop_load_test() {
 }
 
 #[tauri::command]
-async fn pick_file(app: tauri::AppHandle) -> Result<Option<Value>, String> {
+async fn pick_file(
+    app: tauri::AppHandle,
+    title: Option<String>,
+    extensions: Option<Vec<String>>,
+) -> Result<Option<Value>, String> {
     let picked = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog()
+        let mut dialog = app
+            .dialog()
             .file()
-            .set_title("选择要上传的文件")
-            .blocking_pick_file()
+            .set_title(&title.unwrap_or_else(|| "选择文件".to_string()));
+        if let Some(list) = extensions {
+            let refs: Vec<&str> = list.iter().map(|item| item.as_str()).collect();
+            if !refs.is_empty() {
+                dialog = dialog.add_filter("支持的文件", &refs);
+            }
+        }
+        dialog.blocking_pick_file()
     })
     .await
     .map_err(|e| e.to_string())?;
@@ -885,6 +915,7 @@ fn main() {
             send_request,
             start_load_test,
             stop_load_test,
+            inspect_body_pool,
             pick_file,
             save_response_file,
             download_response_file,

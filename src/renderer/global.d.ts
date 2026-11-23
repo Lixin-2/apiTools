@@ -72,7 +72,12 @@ export interface ApiToolsApi {
     formFields?: FormField[];
     timeoutMs?: number;
   }): Promise<SendResponse>;
-  pickFile(): Promise<{ path: string; name: string; size: number } | null>;
+  pickFile(options?: { title?: string; extensions?: string[] }): Promise<{
+    path: string;
+    name: string;
+    size: number;
+  } | null>;
+  inspectBodyPool(path: string): Promise<{ count: number; bytes: number }>;
   saveResponseFile(payload: {
     sourcePath?: string;
     content?: string;

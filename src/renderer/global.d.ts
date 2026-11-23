@@ -78,6 +78,7 @@ export interface ApiToolsApi {
     size: number;
   } | null>;
   inspectBodyPool(path: string): Promise<{ count: number; bytes: number }>;
+  inspectVarsCsv(path: string): Promise<{ columns: string[]; rows: number }>;
   saveResponseFile(payload: {
     sourcePath?: string;
     content?: string;

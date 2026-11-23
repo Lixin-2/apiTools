@@ -43,9 +43,9 @@ pub struct LoadTestConfig {
     /// 报文池 zip：解压后每份文件作为一次请求体，按文件名顺序轮询
     #[serde(default)]
     pub body_pool_zip: Option<String>,
-    /// 压测变量，替换 URL / 请求头 / 请求体中的 ${name}
+    /// 变量 CSV：表头为变量名，每行一组值，按行轮询
     #[serde(default)]
-    pub variables: Vec<crate::model::KeyValue>,
+    pub variables_csv: Option<String>,
     #[serde(default)]
     pub ramp_up_ms: u64,
     #[serde(default)]
@@ -412,7 +412,12 @@ fn request_parts(config: &LoadTestConfig) -> (BTreeMap<String, String>, Option<S
 }
 
 /// 跑一轮压测，期间每 200ms 通过事件推送一次快照
-pub async fn run(app: tauri::AppHandle, config: LoadTestConfig, body_pool: Arc<Vec<Vec<u8>>>) {
+pub async fn run(
+    app: tauri::AppHandle,
+    config: LoadTestConfig,
+    body_pool: Arc<Vec<Vec<u8>>>,
+    csv_vars: Arc<(Vec<String>, Vec<Vec<String>>)>,
+) {
     use tauri::Emitter;
 
     let concurrency = config.concurrency.clamp(1, MAX_CONCURRENCY);
@@ -460,14 +465,6 @@ pub async fn run(app: tauri::AppHandle, config: LoadTestConfig, body_pool: Arc<V
         .duration_ms
         .map(|ms| started + Duration::from_millis(ms.max(500)));
     let (headers, body, parts) = request_parts(&config);
-    let var_map: Arc<std::collections::HashMap<String, String>> = Arc::new(
-        config
-            .variables
-            .iter()
-            .filter(|item| item.enabled && !item.key.trim().is_empty())
-            .map(|item| (item.key.clone(), item.value.clone()))
-            .collect(),
-    );
     let config = Arc::new(config);
 
     let mut handles = Vec::new();
@@ -481,7 +478,7 @@ pub async fn run(app: tauri::AppHandle, config: LoadTestConfig, body_pool: Arc<V
         let worker_body = body.clone();
         let worker_parts = parts.clone();
         let worker_pool = body_pool.clone();
-        let worker_vars = var_map.clone();
+        let worker_csv = csv_vars.clone();
         let ramp = if config.ramp_up_ms > 0 {
             Duration::from_millis(config.ramp_up_ms * index as u64 / concurrency.max(1) as u64)
         } else {
@@ -508,15 +505,32 @@ pub async fn run(app: tauri::AppHandle, config: LoadTestConfig, body_pool: Arc<V
                 }
                 let sent_index = worker_sent.fetch_add(1, Ordering::Relaxed);
 
+                // 变量：CSV 按行轮询，表头为变量名
+                // 报文池每转完一轮再换下一行，避免两者数量相同时被绑成固定组合
+                let (csv_headers, csv_rows) = worker_csv.as_ref();
+                let vars: std::collections::HashMap<String, String> = if csv_rows.is_empty() {
+                    std::collections::HashMap::new()
+                } else {
+                    let pool_len = worker_pool.len().max(1);
+                    let row = &csv_rows[((sent_index as usize) / pool_len) % csv_rows.len()];
+                    csv_headers
+                        .iter()
+                        .zip(row.iter())
+                        .filter(|(key, _)| !key.trim().is_empty())
+                        .map(|(key, value)| (key.trim().to_string(), value.clone()))
+                        .collect()
+                };
+                let vars = &vars;
+
                 let method = worker_config.method.clone();
                 // 变量替换后再发送
-                let url = substitute_vars(&worker_config.url, &worker_vars);
+                let url = substitute_vars(&worker_config.url, vars);
                 let headers: BTreeMap<String, String> = worker_headers
                     .iter()
                     .map(|(key, value)| {
                         (
-                            substitute_vars(key, &worker_vars),
-                            substitute_vars(value, &worker_vars),
+                            substitute_vars(key, vars),
+                            substitute_vars(value, vars),
                         )
                     })
                     .collect();
@@ -526,7 +540,7 @@ pub async fn run(app: tauri::AppHandle, config: LoadTestConfig, body_pool: Arc<V
                 } else {
                     Some(worker_pool[(sent_index as usize) % worker_pool.len()].clone())
                 };
-                let payload = payload.map(|bytes| substitute_bytes(bytes, &worker_vars));
+                let payload = payload.map(|bytes| substitute_bytes(bytes, vars));
                 let parts = worker_parts.clone();
                 let timeout = worker_config.timeout_ms;
 

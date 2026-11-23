@@ -2,7 +2,7 @@
 
 mod rest;
 
-use apitools_core::{exporters, http_client, importers, load_test, model::*, store};
+use apitools_core::{csv_vars, exporters, http_client, importers, load_test, model::*, store};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -548,17 +548,35 @@ async fn start_load_test(app: tauri::AppHandle, config: Value) -> Result<Value, 
     };
     let pool_size = pool.len();
 
+    // 变量 CSV：表头为变量名，按行轮询
+    let csv_data = match parsed
+        .variables_csv
+        .as_ref()
+        .map(|path| path.trim().to_string())
+        .filter(|path| !path.is_empty())
+    {
+        Some(path) => Arc::new(csv_vars::load(&path)?),
+        None => Arc::new((Vec::new(), Vec::new())),
+    };
+    let csv_rows = csv_data.1.len();
+
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
-        load_test::run(handle, parsed, pool).await;
+        load_test::run(handle, parsed, pool, csv_data).await;
     });
-    Ok(json!({ "ok": true, "bodyPool": pool_size }))
+    Ok(json!({ "ok": true, "bodyPool": pool_size, "varRows": csv_rows }))
 }
 
 #[tauri::command]
 fn inspect_body_pool(path: String) -> Result<Value, String> {
     let (count, bytes) = load_test::body_pool_info(&path)?;
     Ok(json!({ "count": count, "bytes": bytes }))
+}
+
+#[tauri::command]
+fn inspect_vars_csv(path: String) -> Result<Value, String> {
+    let (columns, rows) = csv_vars::load(&path)?;
+    Ok(json!({ "columns": columns, "rows": rows.len() }))
 }
 
 #[tauri::command]
@@ -916,6 +934,7 @@ fn main() {
             start_load_test,
             stop_load_test,
             inspect_body_pool,
+            inspect_vars_csv,
             pick_file,
             save_response_file,
             download_response_file,

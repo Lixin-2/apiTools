@@ -61,7 +61,10 @@ export default function LoadTestDialog({ requestName, payload, onClose }: Props)
   const [poolName, setPoolName] = React.useState('');
   const [poolInfo, setPoolInfo] = React.useState<{ count: number; bytes: number } | null>(null);
   const [poolError, setPoolError] = React.useState('');
-  const [vars, setVars] = React.useState<{ key: string; value: string }[]>([{ key: '', value: '' }]);
+  const [csvPath, setCsvPath] = React.useState('');
+  const [csvName, setCsvName] = React.useState('');
+  const [csvInfo, setCsvInfo] = React.useState<{ columns: string[]; rows: number } | null>(null);
+  const [csvError, setCsvError] = React.useState('');
 
   React.useEffect(() => {
     let disposeProgress: (() => void) | null = null;
@@ -127,8 +130,25 @@ export default function LoadTestDialog({ requestName, payload, onClose }: Props)
     setPoolError('');
   };
 
-  const updateVar = (index: number, patch: { key?: string; value?: string }) => {
-    setVars((prev) => prev.map((item, i) => (i === index ? { ...item, ...patch } : item)));
+  const pickCsv = async () => {
+    setCsvError('');
+    const file = await window.api.pickFile({ title: '选择变量 CSV', extensions: ['csv', 'txt'] });
+    if (!file) return;
+    try {
+      const info = await window.api.inspectVarsCsv(file.path);
+      setCsvPath(file.path);
+      setCsvName(file.name);
+      setCsvInfo(info);
+    } catch (err: any) {
+      setCsvError(err?.message ?? String(err));
+    }
+  };
+
+  const clearCsv = () => {
+    setCsvPath('');
+    setCsvName('');
+    setCsvInfo(null);
+    setCsvError('');
   };
 
   const start = async () => {
@@ -173,14 +193,7 @@ export default function LoadTestDialog({ requestName, payload, onClose }: Props)
         rpsChangeSecs: rateMode === 'random' ? Math.max(1, num(changeSecs)) : 0,
         rampUpMs: num(rampUp) * 1000,
         bodyPoolZip: poolPath || undefined,
-        variables: vars
-          .filter((item) => item.key.trim())
-          .map((item, index) => ({
-            id: `lt_var_${index}`,
-            key: item.key.trim(),
-            value: item.value,
-            enabled: true,
-          })),
+        variablesCsv: csvPath || undefined,
       });
       setRunning(true);
     } catch (err: any) {
@@ -454,49 +467,44 @@ export default function LoadTestDialog({ requestName, payload, onClose }: Props)
 
       <div className="lt-section">
         <div className="lt-section-head">
-          <span className="lt-section-title">变量（可选）</span>
-          <span className="help">
-            用 {'${变量名}'} 引用，作用于 URL / 请求头 / 报文内容
-          </span>
+          <span className="lt-section-title">变量数据（可选）</span>
+          {csvInfo && (
+            <span className="help">
+              {csvInfo.rows} 行 · {csvInfo.columns.filter(Boolean).join(', ')}
+            </span>
+          )}
         </div>
-        <div className="lt-vars">
-          {vars.map((item, index) => (
-            <div className="lt-var-row" key={index}>
-              <input
-                className="text-input"
-                value={item.key}
-                placeholder="变量名，如 userId"
-                spellCheck={false}
-                disabled={running}
-                onChange={(event) => updateVar(index, { key: event.target.value })}
-              />
-              <input
-                className="text-input"
-                value={item.value}
-                placeholder="值，如 1001"
-                spellCheck={false}
-                disabled={running}
-                onChange={(event) => updateVar(index, { value: event.target.value })}
-              />
+        <div className="lt-pool">
+          <button className="chip-button" onClick={pickCsv} disabled={running}>
+            <Icon name="file" size={12} />
+            {csvPath ? '更换 CSV' : '选择变量 CSV'}
+          </button>
+          {csvPath ? (
+            <div className="lt-pool-file">
+              <span className="lt-pool-name" title={csvPath}>
+                {csvName}
+              </span>
               <button
-                className="icon-btn danger"
-                title="删除变量"
+                className="icon-btn"
+                title="移除变量文件"
+                onClick={clearCsv}
                 disabled={running}
-                onClick={() => setVars((prev) => prev.filter((_, i) => i !== index))}
               >
                 <Icon name="close" size={11} />
               </button>
             </div>
-          ))}
-          <button
-            className="chip-button ghost"
-            disabled={running}
-            onClick={() => setVars((prev) => [...prev, { key: '', value: '' }])}
-          >
-            <Icon name="plus" size={12} />
-            添加变量
-          </button>
+          ) : (
+            <span className="help">
+              第一行是表头（变量名），其后每行一组值，按行轮询；用 {'${变量名}'} 引用
+            </span>
+          )}
         </div>
+        {csvError && (
+          <div className="body-error">
+            <Icon name="info" size={12} />
+            <span>{csvError}</span>
+          </div>
+        )}
       </div>
 
       {error && (

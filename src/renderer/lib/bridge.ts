@@ -45,6 +45,7 @@ export function installTauriBridge(): void {
         extensions: options?.extensions,
       }),
     inspectBodyPool: (path) => invoke('inspect_body_pool', { path }),
+    inspectVarsCsv: (path) => invoke('inspect_vars_csv', { path }),
     saveResponseFile: (payload) => invoke('save_response_file', payload),
     downloadResponseFile: (payload) => invoke('download_response_file', payload),
     revealPath: (path) => invoke('reveal_path', { path }),

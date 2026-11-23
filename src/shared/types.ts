@@ -246,8 +246,8 @@ export interface LoadTestConfig {
   rpsChangeSecs?: number;
   /** 报文池 zip：每份文件作为一次请求体，按文件名顺序轮询 */
   bodyPoolZip?: string;
-  /** 压测变量，替换 ${name} */
-  variables?: KeyValue[];
+  /** 变量 CSV：表头为变量名，按行轮询 */
+  variablesCsv?: string;
   rampUpMs?: number;
   timeoutMs?: number;
 }

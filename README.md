@@ -15,6 +15,15 @@ Rust + Tauri 2 驱动，React 界面。
 
 </div>
 
+<p align="center">
+  <img src="docs/preview-light.png" width="49%" alt="浅色主题" />
+  <img src="docs/preview-dark.png" width="49%" alt="深色主题" />
+</p>
+
+<p align="center"><sub>浅色 / 深色双主题 · 环境下拉与 URL 前缀 · JSON 折叠与高亮</sub></p>
+
+<div align="center">
+
 ---
 
 ## 为什么用它

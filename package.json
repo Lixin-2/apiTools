@@ -2,7 +2,7 @@
   "name": "apitools",
   "private": true,
   "version": "1.0.6",
-  "description": "A local-first REST API debugger (Rust + Tauri) with import/export and MCP support",
+  "description": "本地优先的 API 调试台：接口调试、环境管理、压测与 MCP Agent 一体化",
   "type": "module",
   "scripts": {
     "dev": "tauri dev",
@@ -35,5 +35,23 @@
     "typescript": "^5.6.3",
     "vite": "^5.4.11"
   },
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/Lixin-2/apiTools",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lixin-2/apiTools.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Lixin-2/apiTools/issues"
+  },
+  "keywords": [
+    "api",
+    "rest",
+    "tauri",
+    "load-test",
+    "mcp",
+    "openapi",
+    "postman",
+    "developer-tools"
+  ]
 }

@@ -1,103 +1,97 @@
+<div align="center">
+
 # apiTools
 
-本地优先的 REST API 调试台（macOS 桌面应用）。**Rust + Tauri 2** 实现后端与桌面壳，React + TypeScript 实现界面，参考 Hoppscotch 的工作流：左侧集合树、中间请求编辑、下方响应面板。
+**本地优先的 API 调试台 —— 接口、环境、压测、AI Agent，一个窗口搞定**
 
-支持 OpenAPI / Postman / HAR / cURL 导入导出，内置 **MCP Server** 与 **本地 REST API**，AI agent 可以把接口直接写进你的工作区。
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/Lixin-2/apiTools?color=7c5cff)](https://github.com/Lixin-2/apiTools/releases)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)](#安装)
+[![Tauri](https://img.shields.io/badge/Tauri-2.x-24c8db)](https://tauri.app)
+[![Rust](https://img.shields.io/badge/Rust-1.77+-dea584)](https://www.rust-lang.org)
+
+Rust + Tauri 2 驱动，React 界面。
+支持 OpenAPI / Swagger / Postman / HAR / cURL 互转，内置 MCP Server，AI Agent 可以直接把接口写进你的项目。
+
+</div>
+
+---
+
+## 为什么用它
+
+| | |
+| --- | --- |
+| **本地优先** | 数据就是一个 JSON 文件，不登录、不上云、不收集任何统计 |
+| **AI 原生** | 内置 MCP Server（HTTP / stdio），Agent 能读项目结构、创建目录、写入接口、发请求验证 |
+| **自带压测** | 不用装 JMeter：并发 / 定速 / 随机 TPS、zip 报文池、CSV 变量池、实时图表 |
+| **环境即配置** | 每个环境配一次「URL 前缀 + 统一请求头」，接口里只写 `/users`，不用重复填 |
 
 ## 功能
 
-- **多项目管理**：按项目隔离集合、接口与环境，侧栏顶部一键切换
-- **请求调试**：GET / POST / PUT / PATCH / DELETE / HEAD / OPTIONS；参数、请求头、请求体（JSON / Text / Form / URL Encoded）；Bearer / Basic / API Key 鉴权
-- **集合与多级目录**：集合 → 目录（支持 `用户中心/登录` 这样的多级嵌套）→ 接口；目录可空、可重命名、可删除（删除时接口回到集合根级）
-- **环境设置**：每个环境配置「统一 URL 前缀」+「统一请求头」，发送时自动拼接与注入——接口里只写 `/users` 这种相对路径即可；接口写完整地址时不拼接，接口内同名 Header 优先
-- **外观**：浅色（默认）/ 深色 / 跟随系统三态，配色、JSON 高亮、遮罩随之变化；Dock 图标也区分浅色白底与深色黑底，随外观自动切换
-- **布局**：侧栏宽度、请求/响应分栏高度均可拖动，选择会记住
-- **导入**：OpenAPI 3 / Swagger 2、Postman Collection v2.1、HAR、cURL、apiTools JSON（自动识别格式）
-- **导出**：Postman Collection v2.1、OpenAPI 3.0、apiTools JSON（可复制或保存文件）
-- **MCP**：agent 通过 MCP 工具导入接口、查询集合、导出文档、直接发请求验证
-- **本地 REST API**：所有数据操作都有 HTTP 端点，方便脚本或第三方工具接入
+**请求调试**
 
-## 技术栈
+- 7 种方法：`GET` `POST` `PUT` `PATCH` `DELETE` `HEAD` `OPTIONS`
+- 请求体：JSON（实时校验 + 格式化）、Text、Form（含文件上传）、URL Encoded
+- 鉴权：Bearer / Basic / API Key（header 或 query）
+- 编辑器支持折叠、`⌘F` 搜索、语法高亮，上万行 JSON 也不卡
 
-| 层 | 选型 |
+**组织与协作**
+
+- 多项目隔离：一个项目一套集合 / 接口 / 环境，侧栏一键切换
+- 集合 → 多级目录（`用户中心/登录`）→ 接口，删除目录时接口自动回到根级
+- 请求标签页：切换保留未保存的改动，`⌘W` 关闭、`⌘S` 保存，关闭前自动存盘
+
+**环境**
+
+- 「统一 URL 前缀」+「统一请求头」，发送时自动拼接与注入
+- 接口写完整地址时不拼接；接口内同名 Header（忽略大小写）优先于环境
+- 请求区、压测面板都能直接切环境
+
+**压测**
+
+- 并发数 / 定时长 / 定请求数 / 逐级加压
+- 速率模式：不限速、固定 TPS、随机 TPS（区间 + 变化间隔）
+- 报文池：上传 zip，按文件名顺序轮询，每份作为一次请求体
+- 变量池：上传 CSV，表头为变量名，按行轮询，用 `${name}` 引用
+- 实时图表：QPS、延迟分位、延迟分布、状态码、错误分类、最慢请求
+- 后台运行：关掉面板继续跑，右下角常驻状态胶囊，点击回到面板
+
+**导入导出**
+
+- 导入：OpenAPI 3 / Swagger 2、Postman Collection v2.1、HAR、cURL、apiTools JSON（自动识别格式）
+- 导出：Postman、OpenAPI 3.0、apiTools JSON
+- 响应支持二进制下载，自动识别文件名与 MIME
+
+**外观**
+
+- 浅色（默认）/ 深色 / 跟随系统，配色与 JSON 高亮实时切换
+- Dock 图标随主题切换白底 / 黑底
+- 侧栏宽度、请求 / 响应分栏高度可拖动，选择会记住
+- 全区域右键菜单：请求、目录、集合、标签、编辑器、输入框
+
+## 安装
+
+从 [Releases](https://github.com/Lixin-2/apiTools/releases) 下载：
+
+| 平台 | 文件 |
 | --- | --- |
-| 语言 | Rust 2021（1.77+） |
-| 桌面壳 | Tauri 2（macOS，Overlay 标题栏） |
-| 界面 | React 18 + TypeScript + Vite（手写深色主题，无 UI 框架） |
-| 本地服务 | `axum` 0.7 + tokio，监听 `127.0.0.1:4731`，Token 鉴权 |
-| HTTP 代理 | `ureq` 2（rustls） |
-| 序列化 | `serde` / `serde_json` |
-| 文件监听 | `notify` 6（MCP 写入实时同步到界面） |
-| Agent 接入 | 手写 JSON-RPC over stdio（无额外依赖） |
-| 存储 | 单个 JSON 文件 + 文件锁 + 原子写入 |
-| 打包 | Tauri bundler（.app + .dmg，arm64） |
+| macOS（Apple Silicon） | `apiTools_x.y.z_aarch64.dmg` |
+| Windows（x64） | `apiTools_x.y.z_x64-setup.exe`（推荐）或 `.msi` |
 
-## 架构
+> 未做代码签名：macOS 首次打开需右键 → 打开（或 `xattr -dr com.apple.quarantine /Applications/apiTools.app`）；Windows 首次运行点「更多信息 → 仍要运行」。
+> 升级直接装新版覆盖即可，数据保留；Windows 请固定用同一种安装包（exe 或 msi）。
 
-```
-src-tauri/
-├── src/lib.rs            # 核心库 apitools_core（不含 tauri，可被 MCP 复用）
-│   ├── model.rs          # 数据模型（serde camelCase，对齐前端 TS 类型）
-│   ├── store.rs          # 工作区读写、文件锁、集合/接口/环境 CRUD
-│   ├── importers.rs      # OpenAPI / Postman / HAR / cURL 解析
-│   ├── exporters.rs      # Postman / OpenAPI / apiTools 导出
-│   └── http_client.rs    # ureq 请求代理，返回状态码/头/耗时
-├── src/main.rs           # Tauri 应用：commands、REST 服务、文件监听
-├── src/rest.rs           # axum 路由（本地 REST API）
-└── src/bin/apitools-mcp.rs  # MCP stdio server（独立二进制）
-```
+## 快速上手
 
-同一份 `apitools_core` 同时被桌面应用和 MCP 二进制复用，两者读写同一个 JSON 数据文件，因此 agent 导入的接口会立刻出现在应用界面里。
+1. 新建一个集合，在里面建请求，填入 URL（或用环境的相对路径）
+2. 右上角「环境设置」配置 URL 前缀和公共请求头，接口里就只写 `/users`
+3. 顶部「MCP」开启服务，把配置粘到 Claude / CodeBuddy / Cursor 里，让 Agent 直接管接口
 
-## 数据位置
+## MCP 集成
 
-```
-~/Library/Application Support/apiTools/workspace.json   # 项目、集合、目录、接口、环境与变量
-~/Library/Application Support/apiTools/api-token        # 本地 REST API Token
-```
+应用内提供两种传输方式，右上角 **MCP** 面板可开关、改端口（默认 `4732`），配置可一键复制。
 
-可用环境变量 `APITOOLS_DATA_DIR` 覆盖数据目录（MCP 也支持 `--data-dir <path>`）。
-
-## 开发
-
-需要：Node.js 18+、Rust 1.77+、Xcode Command Line Tools。
-
-```bash
-npm install
-npm run dev          # tauri dev：Vite + Rust 热更新
-npm run typecheck    # 前端类型检查
-npm run build:mcp    # 单独编译 MCP 二进制 → src-tauri/binaries/apitools-mcp
-npm run dist         # 打包 macOS 应用（.app + .dmg）
-```
-
-## 打包产物
-
-```bash
-npm run dist
-```
-
-输出：
-
-```
-src-tauri/target/aarch64-apple-darwin/release/bundle/macos/apiTools.app
-src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/apiTools_1.0.0_aarch64.dmg
-```
-
-应用为 ad-hoc 签名（无开发者证书）。首次打开若被 Gatekeeper 拦截，右键点击 → 打开，或执行：
-
-```bash
-xattr -dr com.apple.quarantine /Applications/apiTools.app
-```
-
-MCP Server 随应用分发：`apiTools.app/Contents/Resources/binaries/apitools-mcp`，无需额外安装运行时。
-
-## MCP 接入
-
-应用内置两种传输方式，右上角 **MCP** 面板可开关服务、修改端口（默认 `4732`，存于数据目录 `settings.json`），并一键复制配置。
-
-**方式一：HTTP（推荐，可开关）**
-
-在 MCP 面板打开「HTTP MCP 服务」后：
+**HTTP（推荐）**
 
 ```json
 {
@@ -109,9 +103,7 @@ MCP Server 随应用分发：`apiTools.app/Contents/Resources/binaries/apitools-
 }
 ```
 
-端点：`POST http://127.0.0.1:4732/mcp`（JSON-RPC），`GET /health` 可用于探活。端口被占用时会提示更换；应用启动时若端口冲突会自动回退到随机端口，但保留你的配置。
-
-**方式二：stdio 本地进程**
+**stdio**
 
 ```json
 {
@@ -124,62 +116,81 @@ MCP Server 随应用分发：`apiTools.app/Contents/Resources/binaries/apitools-
 }
 ```
 
-两种方式使用同一套工具实现（`apitools_core::mcp`），数据完全一致。
+两种方式共用同一套实现，数据实时同步：Agent 写入的接口会立刻出现在界面里。
 
-### MCP 工具
+此外还有本地 REST API（`http://127.0.0.1:4731`，需带 `x-apitools-token` 头），提供 `/collections`、`/requests`、`/import`、`/export`、`/send`、`/openapi.json` 等端点，方便脚本或第三方工具接入。
+
+<details>
+<summary><b>MCP 工具一览（18 个）</b></summary>
 
 | 工具 | 说明 |
 | --- | --- |
-| `get_project_tree` | **推荐先调用**：返回当前项目 → 集合 → 多级目录（完整 path）→ 每个目录下的接口摘要，以及当前环境的 URL 前缀与统一请求头 |
-| `list_projects` / `switch_project` / `create_project` | 查看、切换、新建项目（写操作都作用于当前项目） |
+| `get_project_tree` | 返回项目 → 集合 → 多级目录 → 接口摘要，以及当前环境配置 |
+| `list_projects` / `switch_project` / `create_project` | 项目查看、切换、新建 |
 | `list_collections` / `create_collection` / `delete_collection` | 集合管理 |
-| `create_folder` | 新建目录，`path` 支持多级，如 `用户中心/登录` |
-| `list_requests` / `get_request` | 浏览接口 |
-| `save_request` / `delete_request` | 维护单个接口（`collectionName` + `folder` 决定落点） |
-| `import_api_document` | 传入 OpenAPI / Postman / HAR / cURL 原文并入库（自动识别格式） |
-| `import_api_from_url` | 从远程 URL 拉取接口文档并导入 |
-| `export_collection` | 导出为 Postman / OpenAPI / apiTools |
-| `list_environments` / `save_environment` | 查看、配置环境（统一 URL 前缀与统一请求头） |
-| `send_request` | 代理发送请求；`applyEnvironment: true` 时自动套用当前环境的 URL 前缀与统一请求头 |
+| `create_folder` | 新建目录，`path` 支持多级 |
+| `list_requests` / `get_request` / `save_request` / `delete_request` | 接口的增删改查 |
+| `import_api_document` / `import_api_from_url` | 导入文档（本地文本或远程 URL） |
+| `export_collection` | 导出为 Postman / OpenAPI / JSON |
+| `list_environments` / `save_environment` | 环境读取与配置 |
+| `send_request` | 代发请求，`applyEnvironment` 可复用环境前缀与请求头 |
 
-示例：对 agent 说「把这块接口加到 演示项目 / 示例服务 / 用户中心/登录 下面」，agent 会先 `get_project_tree` 确认目录路径，再 `save_request` 带上 `collectionName: "示例服务"` 和 `folder: "用户中心/登录"`。
+</details>
 
-## 本地 REST API
+## 技术栈
 
-所有请求需带 `x-apitools-token` 头（Token 见应用内 MCP 面板或 `api-token` 文件）。
+| 层 | 选型 |
+| --- | --- |
+| 桌面壳 | Tauri 2（macOS / Windows） |
+| 后端 | Rust 2021：`ureq` HTTP 代理、`axum` 本地 REST、`zip` 报文池、`notify` 文件监听 |
+| 前端 | React 18 + TypeScript + Vite（无 UI 框架，手写主题与组件） |
+| 编辑器 | CodeMirror 6（折叠 / 搜索 / 语法高亮） |
+| Agent | 手写 JSON-RPC，同时支持 HTTP 与 stdio |
+| 存储 | 单 JSON 文件 + 文件锁 + 原子写入 |
 
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| GET | `/health` | 健康检查 |
-| GET / POST | `/collections` | 列出 / 创建集合 |
-| PATCH / DELETE | `/collections/:id` | 更新 / 删除集合 |
-| GET / POST | `/requests` | 列出 / 创建接口 |
-| PUT / DELETE | `/requests/:id` | 更新 / 删除接口 |
-| POST | `/import` | 导入文档（`{content, format?, collectionName?, mode?}`） |
-| GET | `/export` | 导出集合（`?format=postman&collectionId=...`） |
-| POST | `/send` | 代理发送 HTTP 请求 |
-| GET | `/openapi.json` | 自身 API 的 OpenAPI 描述 |
+## 开发
 
 ```bash
-TOKEN=$(cat ~/Library/Application\ Support/apiTools/api-token)
-curl -X POST http://127.0.0.1:4731/import \
-  -H "content-type: application/json" \
-  -H "x-apitools-token: $TOKEN" \
-  -d '{"format":"openapi","content":"{\"openapi\":\"3.0.0\",...}"}'
+npm install
+npm run dev          # tauri dev（Vite + Rust 热更新）
+npm run typecheck    # 前端类型检查
+npm run dist         # 打包当前平台（.app/.dmg 或 .exe/.msi）
+npm run dist:win     # 打 Windows 包（需在 Windows 或 CI 上执行）
 ```
 
-## 目录结构
+依赖：Node.js 18+、Rust 1.77+、平台构建工具链。
+
+**架构**
 
 ```
-src-tauri/         Rust：核心库、Tauri 应用、REST 服务、MCP 二进制
-src/shared/        前端共享类型（TS）与 URL 工具
-src/renderer/      React 界面（组件、样式、Tauri bridge）
-scripts/           构建脚本（编译并复制 MCP 二进制）
+src-tauri/
+├── src/lib.rs          # apitools_core：可被桌面应用与 MCP 复用的核心库
+│   ├── model.rs        # 数据模型（对齐前端 TS 类型）
+│   ├── store.rs        # 读写、文件锁、CRUD
+│   ├── importers.rs    # OpenAPI / Postman / HAR / cURL 解析
+│   ├── exporters.rs    # Postman / OpenAPI / JSON 导出
+│   ├── http_client.rs  # HTTP 代理（含 multipart、文件落盘）
+│   ├── load_test.rs    # 压测引擎（并发、限速、报文池、CSV 变量）
+│   └── mcp.rs          # MCP 工具实现（两种传输共用）
+├── src/main.rs         # Tauri 应用：commands、REST、MCP HTTP 服务
+└── src/bin/apitools-mcp.rs   # MCP stdio 二进制
+
+src/shared/             # 前后端共享类型与 URL 工具
+src/renderer/           # React 界面（组件、样式、bridge）
 ```
+
+**数据位置**
+
+```
+macOS    ~/Library/Application Support/apiTools/
+Windows  %APPDATA%\apiTools\
+```
+
+包含 `workspace.json`（项目/集合/接口/环境）、`settings.json`（MCP 端口等）、`api-token`（本地 REST API 令牌）。
+可用 `APITOOLS_DATA_DIR` 覆盖数据目录。
 
 ## 许可证
 
-本项目采用 [Apache License 2.0](LICENSE) 开源，Copyright 2026 apiTools contributors。
+[Apache License 2.0](LICENSE) · Copyright 2026 apiTools contributors
 
-你可以自由使用、修改、分发本项目（包括商业用途），但需保留 `LICENSE` 与 `NOTICE` 文件，
-并在修改过的文件中注明改动。完整条款见 [LICENSE](LICENSE)。
+允许商用、修改、分发与专利授权；需保留 `LICENSE` 与 `NOTICE`，修改过的文件注明改动。

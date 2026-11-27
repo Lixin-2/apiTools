@@ -63,8 +63,8 @@ jobs:
             echo "::error::缺少 TAURI_SIGNING_PRIVATE_KEY，更新包无法签名。请在 Settings → Secrets and variables → Actions 中添加私钥内容（cat ~/.tauri/apitools.key）。"
             exit 1
           fi
-          # 去掉换行/回车与首尾空白，写成单行文件，避免 secret 带换行导致解码失败
-          printf '%s' "$KEY" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' > "$RUNNER_TEMP/signing.key"
+          # 只保留 base64 合法字符：zsh 的 cat 会在末尾补 % 提示符，粘贴时容易一起带进来
+          printf '%s' "$KEY" | tr -cd 'A-Za-z0-9+/=' > "$RUNNER_TEMP/signing.key"
           BYTES=$(wc -c < "$RUNNER_TEMP/signing.key" | tr -d ' ')
           echo "signing key: ${BYTES} bytes"
           if [ "$BYTES" -lt 200 ]; then

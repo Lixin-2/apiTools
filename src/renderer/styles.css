@@ -2772,9 +2772,10 @@ body.resizing-row * {
   z-index: 70;
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 10px;
+  width: 352px;
   height: 46px;
-  padding: 0 16px 0 14px;
+  padding: 0 18px 0 14px;
   border-radius: 23px;
   border: 1px solid var(--border);
   background: var(--bg-elev);
@@ -2782,6 +2783,7 @@ body.resizing-row * {
   font-size: 12.5px;
   color: var(--text);
   animation: pop 0.16s ease;
+  overflow: hidden;
 }
 .lt-float:hover {
   border-color: var(--accent);
@@ -2794,13 +2796,38 @@ body.resizing-row * {
   box-shadow: 0 0 8px color-mix(in srgb, var(--green) 65%, transparent);
   animation: lt-pulse 1.4s ease-in-out infinite;
 }
-.lt-float b {
+.lt-float-text {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.lt-float-total {
+  flex: 0 0 auto;
+  min-width: 86px;
+  text-align: right;
   font-variant-numeric: tabular-nums;
   font-weight: 650;
+  white-space: nowrap;
 }
 .lt-float-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
   color: var(--text-faint);
   font-size: 11.5px;
+}
+.lt-float-unit {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.lt-float-qps {
+  flex: 0 0 auto;
+  width: 96px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
 }
 @keyframes lt-pulse {
   0%,

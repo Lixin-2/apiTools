@@ -1236,12 +1236,15 @@ export default function App() {
           title="压测在后台运行，点击打开面板"
         >
           <span className="lt-float-dot" />
-          <span>压测进行中</span>
-          <b>{(liveTest.snapshot?.total ?? 0).toLocaleString()}</b>
+          <span className="lt-float-text">压测进行中</span>
+          <b className="lt-float-total">{(liveTest.snapshot?.total ?? 0).toLocaleString()}</b>
           <span className="lt-float-meta">
-            {(liveTest.snapshot?.qps ?? 0) >= 1
-              ? `请求 · QPS ${Math.round(liveTest.snapshot?.qps ?? 0)}`
-              : '请求'}
+            <span className="lt-float-unit">请求</span>
+            <span className="lt-float-qps">
+              {(liveTest.snapshot?.qps ?? 0) >= 1
+                ? `QPS ${Math.round(liveTest.snapshot?.qps ?? 0)}`
+                : ''}
+            </span>
           </span>
         </button>
       )}

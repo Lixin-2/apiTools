@@ -1055,16 +1055,6 @@ export default function App() {
             <Icon name="robot" size={13} />
             MCP
           </button>
-          <button
-            className="chip-button ghost"
-            title="打开 GitHub 仓库"
-            onClick={() => window.api.openUrl('https://github.com/Lixin-2/apiTools')}
-          >
-            <Icon name="github" size={14} />
-          </button>
-          <button className="chip-button ghost" title="检查更新" onClick={checkForUpdate}>
-            <Icon name="refresh" size={13} />
-          </button>
           <Select
             value={themeMode}
             onChange={(value) => setThemeMode(value as ThemeMode)}
@@ -1086,15 +1076,26 @@ export default function App() {
             style={{ width: 136 }}
             menuWidth={150}
           />
+          <span className="top-divider" />
+          <button className="top-icon-btn" title="检查更新" onClick={checkForUpdate}>
+            <Icon name="download" size={14} />
+          </button>
           <button
-            className="chip-button ghost"
+            className="top-icon-btn"
             title="刷新数据"
             onClick={async () => {
               await reload();
               showToast('已刷新');
             }}
           >
-            <Icon name="refresh" size={13} />
+            <Icon name="refresh" size={14} />
+          </button>
+          <button
+            className="top-icon-btn"
+            title="打开 GitHub 仓库"
+            onClick={() => window.api.openUrl('https://github.com/Lixin-2/apiTools')}
+          >
+            <Icon name="github" size={15} />
           </button>
         </div>
       </header>

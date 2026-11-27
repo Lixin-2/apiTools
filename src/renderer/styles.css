@@ -2867,3 +2867,30 @@ body.resizing-row * {
   white-space: pre-wrap;
   color: var(--text-dim);
 }
+
+/* ------------------------------- top bar tools ----------------------------- */
+
+.top-divider {
+  width: 1px;
+  height: 18px;
+  margin: 0 3px;
+  background: var(--border);
+  flex: 0 0 auto;
+}
+.top-icon-btn {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  color: var(--text-dim);
+  transition: background 0.14s ease, color 0.14s ease;
+}
+.top-icon-btn:hover {
+  background: var(--bg-elev-3);
+  color: var(--text);
+}
+.top-icon-btn:active {
+  transform: scale(0.94);
+}

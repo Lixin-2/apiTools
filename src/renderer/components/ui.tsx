@@ -368,7 +368,9 @@ export function AppMark({ size = 22 }: { size?: number }) {
         strokeLinecap="round"
       />
       <circle cx="17" cy="47" r="7.5" className="app-mark-node" />
+      <circle cx="17" cy="47" r="2.9" fill="#7c5cff" />
       <circle cx="47" cy="17" r="7.5" className="app-mark-node" />
+      <circle cx="47" cy="17" r="2.9" fill="#22d3ee" />
     </svg>
   );
 }

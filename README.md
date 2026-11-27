@@ -176,3 +176,10 @@ src/shared/        前端共享类型（TS）与 URL 工具
 src/renderer/      React 界面（组件、样式、Tauri bridge）
 scripts/           构建脚本（编译并复制 MCP 二进制）
 ```
+
+## 许可证
+
+本项目采用 [Apache License 2.0](LICENSE) 开源，Copyright 2026 apiTools contributors。
+
+你可以自由使用、修改、分发本项目（包括商业用途），但需保留 `LICENSE` 与 `NOTICE` 文件，
+并在修改过的文件中注明改动。完整条款见 [LICENSE](LICENSE)。

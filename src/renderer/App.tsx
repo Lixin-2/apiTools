@@ -258,6 +258,43 @@ export default function App() {
     | { status: 'error'; message: string }
   >({ status: 'idle' });
   const pendingUpdate = React.useRef<any>(null);
+  // 启动后台静默检查，有新版时在顶栏图标上点个红点（参考成熟桌面端的做法）
+  const [updateReady, setUpdateReady] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    const timer = setTimeout(async () => {
+      try {
+        const update = await Promise.race([
+          check(),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('timeout')), 15000),
+          ),
+        ]);
+        if (update) {
+          pendingUpdate.current = update;
+          setUpdateReady(update.version);
+        }
+      } catch {
+        /* 后台检查失败不打扰用户 */
+      }
+    }, 6000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  /** 点顶栏图标：已探测到新版就直接展示，否则现查一次 */
+  const openUpdatePanel = () => {
+    const pending = pendingUpdate.current;
+    if (pending && updateReady) {
+      setUpdateState({
+        status: 'available',
+        version: pending.version,
+        current: pending.currentVersion,
+        notes: pending.body ?? '',
+      });
+      return;
+    }
+    void checkForUpdate();
+  };
 
   const checkForUpdate = async () => {
     setUpdateState({ status: 'checking' });
@@ -1078,8 +1115,13 @@ export default function App() {
             menuWidth={150}
           />
           <span className="top-divider" />
-          <button className="top-icon-btn" title="检查更新" onClick={checkForUpdate}>
+          <button
+            className="top-icon-btn"
+            title={updateReady ? `发现新版本 ${updateReady}` : '检查更新'}
+            onClick={openUpdatePanel}
+          >
             <Icon name="download" size={14} />
+            {updateReady && <span className="top-dot" />}
           </button>
           <button
             className="top-icon-btn"

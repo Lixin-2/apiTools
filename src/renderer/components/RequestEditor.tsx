@@ -2,6 +2,7 @@ import React from 'react';
 import {
   ApiRequest,
   BodyType,
+  Environment,
   FormField,
   HTTP_METHODS,
   HttpMethod,
@@ -21,8 +22,12 @@ interface Props {
   variables: KeyValue[];
   previewUrl: string;
   baseUrl: string;
+  environments: Environment[];
+  activeEnvironmentId: string | null;
   folders: string[];
   onChange: (patch: Partial<ApiRequest>) => void;
+  onSelectEnvironment: (id: string | null) => void;
+  onOpenEnvSettings: () => void;
   onLoadTest?: () => void;
   onSend: () => void;
   onSave: () => void;
@@ -306,11 +311,15 @@ export default function RequestEditor({
   variables,
   previewUrl,
   baseUrl,
+  environments,
+  activeEnvironmentId,
   folders,
   onChange,
   onSend,
   onSave,
   onLoadTest,
+  onSelectEnvironment,
+  onOpenEnvSettings,
 }: Props) {
   const [tab, setTab] = React.useState<TabKey>('params');
   const bodyActions = React.useRef<EditorActions | null>(null);
@@ -372,14 +381,25 @@ export default function RequestEditor({
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) onSend();
             }}
           />
-          {baseUrl && (
-            <span
-              className={`prefix-chip ${isAbsolute ? 'muted' : 'active'}`}
-              title={`环境 URL 前缀：${baseUrl}`}
-            >
-              {isAbsolute ? '完整地址' : '前缀已拼接'}
-            </span>
-          )}
+          <Select
+            value={activeEnvironmentId ?? ''}
+            onChange={(value) => {
+              if (value === '__manage') {
+                onOpenEnvSettings();
+                return;
+              }
+              onSelectEnvironment(value || null);
+            }}
+            options={[
+              { value: '', label: '不使用环境' },
+              ...environments.map((env) => ({ value: env.id, label: env.name })),
+              { value: '__manage', label: '管理环境…' },
+            ]}
+            size="sm"
+            className="env-switch"
+            style={{ width: 132, flex: '0 0 auto' }}
+            menuWidth={190}
+          />
         </div>
         {onLoadTest && (
           <button className="chip-button" onClick={onLoadTest} title="用当前请求做压力测试">

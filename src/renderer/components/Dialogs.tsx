@@ -513,9 +513,9 @@ export function EnvDialog({
   environments: Environment[];
   activeId: string | null;
   onClose: () => void;
-  onSave: (env: Partial<Environment>) => Promise<void>;
+  onSave: (env: Partial<Environment>) => Promise<string | void>;
   onDelete: (id: string) => Promise<void>;
-  onActivate: (id: string | null) => Promise<void>;
+  onActivate?: (id: string | null) => Promise<void>;
 }) {
   const [selectedId, setSelectedId] = React.useState<string | null>(
     activeId ?? environments[0]?.id ?? null,
@@ -532,7 +532,13 @@ export function EnvDialog({
   }, [selectedId, environments.length]);
 
   const save = async () => {
-    await onSave({ id: current?.id, name: name || '新环境', baseUrl: baseUrl.trim(), headers });
+    const savedId = await onSave({
+      id: current?.id,
+      name: name || '新环境',
+      baseUrl: baseUrl.trim(),
+      headers,
+    });
+    if (!current && savedId) setSelectedId(savedId);
   };
 
   return (
@@ -596,13 +602,6 @@ export function EnvDialog({
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
-        <button
-          className={`chip-button ${activeId === current?.id && current ? 'primary' : ''}`}
-          onClick={() => current && onActivate(activeId === current.id ? null : current.id)}
-          disabled={!current}
-        >
-          {activeId === current?.id ? '已启用 · 点击停用' : '启用此环境'}
-        </button>
       </div>
 
       <div>

@@ -902,9 +902,13 @@ export default function App() {
             <Icon name="download" size={13} />
             导出
           </button>
-          <button className="chip-button" onClick={() => setDialog('env')}>
+          <button
+            className="chip-button"
+            onClick={() => setDialog('env')}
+            title="统一 URL 前缀与请求头"
+          >
             <Icon name="globe" size={13} />
-            {activeEnv ? activeEnv.name : '环境'}
+            环境设置
           </button>
           <button className="chip-button" onClick={() => setDialog('mcp')}>
             <Icon name="robot" size={13} />
@@ -1023,6 +1027,13 @@ export default function App() {
                 variables={variables}
                 previewUrl={previewUrl}
                 baseUrl={envBaseUrl}
+                environments={workspace?.environments ?? []}
+                activeEnvironmentId={workspace?.activeEnvironmentId ?? null}
+                onSelectEnvironment={async (id) => {
+                  await window.api.setActiveEnvironment(id);
+                  await reload();
+                }}
+                onOpenEnvSettings={() => setDialog('env')}
                 folders={
                   workspace?.collections.find((c) => c.id === draft.collectionId)?.folders ?? []
                 }
@@ -1095,10 +1106,15 @@ export default function App() {
           environments={workspace.environments}
           activeId={workspace.activeEnvironmentId}
           onClose={() => setDialog(null)}
-          onSave={async (env) => {
-            await window.api.saveEnvironment(env);
+          onSave={async (env): Promise<string | undefined> => {
+            const saved = await window.api.saveEnvironment(env);
+            // 新建的环境直接设为当前使用，省去再点一次
+            if (!env.id && saved?.id) {
+              await window.api.setActiveEnvironment(saved.id);
+            }
             await reload();
             showToast('环境已保存');
+            return saved?.id;
           }}
           onDelete={async (id) => {
             await window.api.deleteEnvironment(id);

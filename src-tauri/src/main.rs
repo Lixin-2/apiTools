@@ -585,6 +585,23 @@ fn stop_load_test() {
 }
 
 #[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err("只允许打开 http(s) 链接".to_string());
+    }
+    #[cfg(target_os = "macos")]
+    let status = std::process::Command::new("open").arg(&url).status();
+    #[cfg(target_os = "windows")]
+    let status = std::process::Command::new("cmd")
+        .args(["/C", "start", "", &url])
+        .status();
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let status = std::process::Command::new("xdg-open").arg(&url).status();
+    status.map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 async fn pick_file(
     app: tauri::AppHandle,
     title: Option<String>,
@@ -910,6 +927,8 @@ fn watch_workspace(app: tauri::AppHandle) {
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+            .plugin(tauri_plugin_updater::Builder::new().build())
+            .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
             app_info,
             set_dock_icon,
@@ -935,6 +954,7 @@ fn main() {
             stop_load_test,
             inspect_body_pool,
             inspect_vars_csv,
+            open_url,
             pick_file,
             save_response_file,
             download_response_file,

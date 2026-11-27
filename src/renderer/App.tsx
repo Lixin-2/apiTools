@@ -12,6 +12,8 @@ import {
   createRequest,
 } from '../shared/types';
 import { applyParams, substituteVars } from '../shared/url';
+import { check } from '@tauri-apps/plugin-updater';
+import { relaunch } from '@tauri-apps/plugin-process';
 import type { AppInfo, ImportOutcome } from './global';
 import Sidebar from './components/Sidebar';
 import RequestEditor from './components/RequestEditor';
@@ -246,6 +248,78 @@ export default function App() {
   const [exportTarget, setExportTarget] = React.useState<Collection | null>(null);
   const [loadTestOpen, setLoadTestOpen] = React.useState(false);
   // 压测状态放在 App 层：面板关闭后压测继续，重新打开仍能看到曲线
+  const [updateState, setUpdateState] = React.useState<
+    | { status: 'idle' }
+    | { status: 'checking' }
+    | { status: 'available'; version: string; current: string; notes: string }
+    | { status: 'downloading'; version: string; percent: number }
+    | { status: 'ready'; version: string }
+    | { status: 'latest' }
+    | { status: 'error'; message: string }
+  >({ status: 'idle' });
+  const pendingUpdate = React.useRef<any>(null);
+
+  const checkForUpdate = async () => {
+    setUpdateState({ status: 'checking' });
+    try {
+      // 更新清单在 GitHub 上，国内网络可能较慢，加超时避免一直转圈
+      const update = await Promise.race([
+        check(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('请求更新服务器超时（15 秒）')), 15000),
+        ),
+      ]);
+      if (!update) {
+        setUpdateState({ status: 'idle' });
+        showToast('当前已是最新版本');
+        return;
+      }
+      pendingUpdate.current = update;
+      setUpdateState({
+        status: 'available',
+        version: update.version,
+        current: update.currentVersion,
+        notes: update.body ?? '',
+      });
+    } catch (err: any) {
+      const raw = String(err?.message ?? err);
+      setUpdateState({
+        status: 'error',
+        message:
+          raw.includes('404') || /failed|error send|dns|network/i.test(raw)
+            ? '获取不到更新信息：可能是还没有发布带更新清单的版本，或网络无法访问 GitHub。稍后再试即可。'
+            : raw,
+      });
+    }
+  };
+
+  const installUpdate = async () => {
+    const update = pendingUpdate.current;
+    if (!update) return;
+    setUpdateState({ status: 'downloading', version: update.version, percent: 0 });
+    let downloaded = 0;
+    let total = 0;
+    try {
+      await update.downloadAndInstall((event: any) => {
+        if (event.event === 'Started') {
+          total = event.data?.contentLength ?? 0;
+        } else if (event.event === 'Progress') {
+          downloaded += event.data?.chunkLength ?? 0;
+          setUpdateState({
+            status: 'downloading',
+            version: update.version,
+            percent: total ? Math.min(99, Math.round((downloaded / total) * 100)) : 0,
+          });
+        } else if (event.event === 'Finished') {
+          setUpdateState({ status: 'ready', version: update.version });
+        }
+      });
+      await relaunch();
+    } catch (err: any) {
+      setUpdateState({ status: 'error', message: err?.message ?? String(err) });
+    }
+  };
+
   const [liveTest, setLiveTest] = React.useState<LoadTestLive>({
     running: false,
     snapshot: null,
@@ -981,6 +1055,16 @@ export default function App() {
             <Icon name="robot" size={13} />
             MCP
           </button>
+          <button
+            className="chip-button ghost"
+            title="打开 GitHub 仓库"
+            onClick={() => window.api.openUrl('https://github.com/Lixin-2/apiTools')}
+          >
+            <Icon name="github" size={14} />
+          </button>
+          <button className="chip-button ghost" title="检查更新" onClick={checkForUpdate}>
+            <Icon name="refresh" size={13} />
+          </button>
           <Select
             value={themeMode}
             onChange={(value) => setThemeMode(value as ThemeMode)}
@@ -1247,6 +1331,64 @@ export default function App() {
             </span>
           </span>
         </button>
+      )}
+
+      {updateState.status !== 'idle' && updateState.status !== 'latest' && (
+        <Modal
+          title="软件更新"
+          subtitle={
+            updateState.status === 'checking'
+              ? '正在检查最新版本…'
+              : updateState.status === 'available'
+                ? `当前 ${updateState.current} · 最新 ${updateState.version}`
+                : updateState.status === 'downloading'
+                  ? `正在下载 ${updateState.version}`
+                  : updateState.status === 'ready'
+                    ? '下载完成，即将重启'
+                    : '检查更新失败'
+          }
+          onClose={() => setUpdateState({ status: 'idle' })}
+          footer={
+            <>
+              <span className="spacer" />
+              <button className="chip-button" onClick={() => setUpdateState({ status: 'idle' })}>
+                关闭
+              </button>
+              {(updateState.status === 'available' || updateState.status === 'error') &&
+                updateState.status === 'available' && (
+                  <button className="chip-button primary" onClick={installUpdate}>
+                    立即更新
+                  </button>
+                )}
+            </>
+          }
+        >
+          {updateState.status === 'checking' && (
+            <div className="lt-empty">正在连接更新服务器…</div>
+          )}
+          {updateState.status === 'available' && (
+            <div>
+              <p className="help">新版本 {updateState.version} 已发布</p>
+              {updateState.notes && <pre className="update-notes">{updateState.notes}</pre>}
+            </div>
+          )}
+          {updateState.status === 'downloading' && (
+            <div>
+              <div className="update-bar">
+                <span style={{ width: `${updateState.percent}%` }} />
+              </div>
+              <p className="help">{updateState.percent}% · 下载完成后会自动重启</p>
+            </div>
+          )}
+          {updateState.status === 'ready' && (
+            <p className="help">安装完成，应用即将重启…</p>
+          )}
+          {updateState.status === 'error' && (
+            <div className="result-box" style={{ color: 'var(--danger)' }}>
+              {updateState.message}
+            </div>
+          )}
+        </Modal>
       )}
 
       {promptState && (

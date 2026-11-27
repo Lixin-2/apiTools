@@ -49,6 +49,7 @@ export function installTauriBridge(): void {
     saveResponseFile: (payload) => invoke('save_response_file', payload),
     downloadResponseFile: (payload) => invoke('download_response_file', payload),
     revealPath: (path) => invoke('reveal_path', { path }),
+    openUrl: (url) => invoke('open_url', { url }),
     startLoadTest: (config) => invoke('start_load_test', { config }),
     stopLoadTest: () => invoke('stop_load_test'),
     onLoadTestProgress: (handler) =>

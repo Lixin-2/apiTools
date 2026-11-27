@@ -49,6 +49,15 @@
     "longDescription": "apiTools 是一个本地优先的 REST API 调试工具，支持 OpenAPI / Postman / HAR / cURL 导入导出，并通过 MCP 让 AI agent 直接写入接口。",
     "macOS": {
       "minimumSystemVersion": "10.15"
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU0M0VEQUM5RkQ4MzlDMTQKUldRVW5JUDl5ZG8rVkMwQ0VIM3puak1tTE1sQW5rR3h0T3pUL3NxQ3pOVmxNWUJvbW1DMk9GUUEK",
+      "endpoints": [
+        "https://github.com/Lixin-2/apiTools/releases/latest/download/latest.json"
+      ]
     }
   }
 }

@@ -2840,3 +2840,30 @@ body.resizing-row * {
     transform: scale(0.85);
   }
 }
+
+.update-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--bg-elev-3);
+  overflow: hidden;
+  margin: 10px 0 8px;
+}
+.update-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #7c5cff, #22d3ee);
+  transition: width 0.2s ease;
+}
+.update-notes {
+  max-height: 220px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--border-soft);
+  background: var(--bg-elev-2);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  color: var(--text-dim);
+}

@@ -90,6 +90,7 @@ export interface ApiToolsApi {
     fileName: string;
   }): Promise<string>;
   revealPath(path: string): Promise<void>;
+  openUrl(url: string): Promise<void>;
   startLoadTest(config: LoadTestConfig): Promise<{ ok: boolean }>;
   stopLoadTest(): Promise<void>;
   onLoadTestProgress(handler: (snapshot: LoadTestSnapshot) => void): Promise<() => void>;

@@ -12,9 +12,9 @@ export type UpdateState =
 
 interface Release {
   tag: string;
-  name: string;
   publishedAt: string;
   url: string;
+  body?: string;
 }
 
 const REPO = 'Lixin-2/apiTools';
@@ -25,7 +25,75 @@ function formatDate(value: string) {
   return date.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
 }
 
-/** 更新中心：当前版本状态 + 历史版本（数据来自 GitHub Releases） */
+/** 极简 markdown：只处理标题、列表、粗体、行内代码和链接，够渲染 release notes */
+function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
+  const nodes: React.ReactNode[] = [];
+  const pattern = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)]+\))/g;
+  let last = 0;
+  let index = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > last) nodes.push(text.slice(last, match.index));
+    const token = match[0];
+    const key = `${keyPrefix}-${index++}`;
+    if (token.startsWith('**')) {
+      nodes.push(<b key={key}>{token.slice(2, -2)}</b>);
+    } else if (token.startsWith('`')) {
+      nodes.push(<code key={key}>{token.slice(1, -1)}</code>);
+    } else {
+      const label = token.slice(1, token.indexOf(']'));
+      const href = token.slice(token.indexOf('(') + 1, -1);
+      nodes.push(
+        <a key={key} href={href} onClick={(event) => event.preventDefault()}>
+          {label}
+        </a>,
+      );
+    }
+    last = match.index + token.length;
+  }
+  if (last < text.length) nodes.push(text.slice(last));
+  return nodes;
+}
+
+function renderMarkdown(text?: string) {
+  if (!text || !text.trim()) return null;
+  const blocks: React.ReactNode[] = [];
+  let items: React.ReactNode[] = [];
+  let blockIndex = 0;
+
+  const flush = () => {
+    if (!items.length) return;
+    blocks.push(<ul key={`ul-${blockIndex++}`}>{items}</ul>);
+    items = [];
+  };
+
+  for (const raw of text.split('\n')) {
+    const line = raw.trimEnd();
+    const trimmed = line.trim();
+    if (!trimmed) {
+      flush();
+      continue;
+    }
+    const heading = /^#{2,6}\s+(.*)$/.exec(trimmed);
+    if (heading) {
+      flush();
+      blocks.push(<h4 key={`h-${blockIndex++}`}>{renderInline(heading[1], `h${blockIndex}`)}</h4>);
+      continue;
+    }
+    const bullet = /^[-*]\s+(.*)$/.exec(trimmed);
+    if (bullet) {
+      items.push(<li key={`li-${blockIndex++}`}>{renderInline(bullet[1], `l${blockIndex}`)}</li>);
+      continue;
+    }
+    flush();
+    blocks.push(<p key={`p-${blockIndex++}`}>{renderInline(trimmed, `p${blockIndex}`)}</p>);
+  }
+  flush();
+  return blocks;
+}
+
+/** 更新中心：当前版本状态 + 历史版本（可展开查看更新说明） */
 export default function UpdateCenter({
   currentVersion,
   state,
@@ -43,62 +111,39 @@ export default function UpdateCenter({
   const [releases, setReleases] = React.useState<Release[] | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState('');
+  const [expanded, setExpanded] = React.useState<Set<string>>(new Set());
+  const autoLoadedRef = React.useRef(false);
 
   const loadReleases = React.useCallback(async () => {
     setLoading(true);
     setError('');
-    // GitHub API 在国内可能很慢，12 秒没响应就放弃，让用户走下载页
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 12000);
     try {
-      // 优先读 release 里自带的版本列表（GitHub CDN，快且不限流）
-      const bundled = await fetch(
-        `https://github.com/${REPO}/releases/latest/download/releases.json`,
-        { signal: controller.signal },
-      );
-      if (bundled.ok) {
-        const list = await bundled.json();
-        if (Array.isArray(list) && list.length) {
-          setReleases(
-            list.map((item: any) => ({
-              tag: item.tag ?? '',
-              name: item.tag ?? '',
-              publishedAt: item.publishedAt ?? '',
-              url: item.url ?? '',
-            })),
-          );
-          return;
-        }
-      }
-      // 回退到 GitHub API（版本列表还没随 release 生成时的过渡方案）
-      const response = await fetch(`https://api.github.com/repos/${REPO}/releases?per_page=20`, {
-        signal: controller.signal,
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json();
-      setReleases(
-        (Array.isArray(data) ? data : []).map((item: any) => ({
-          tag: item.tag_name,
-          name: item.name || item.tag_name,
-          publishedAt: item.published_at ?? '',
-          url: item.html_url,
-        })),
-      );
+      const list = await window.api.fetchReleases();
+      setReleases(list);
+      // 默认展开最新一个
+      if (list[0]?.tag) setExpanded(new Set([list[0].tag]));
     } catch (err: any) {
-      setError(
-        err?.name === 'AbortError'
-          ? '请求超时（12 秒），当前网络可能无法访问 GitHub'
-          : (err?.message ?? String(err)),
-      );
+      setError(String(err?.message ?? err));
     } finally {
-      clearTimeout(timer);
       setLoading(false);
     }
   }, []);
 
   React.useEffect(() => {
-    if (tab === 'changelog' && !releases && !loading) void loadReleases();
-  }, [tab, releases, loading, loadReleases]);
+    if (tab === 'changelog' && !autoLoadedRef.current) {
+      autoLoadedRef.current = true;
+      void loadReleases();
+    }
+  }, [tab, loadReleases]);
+
+  const toggle = (tag: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(tag)) next.delete(tag);
+      else next.add(tag);
+      return next;
+    });
+  };
 
   const downloadPage = `https://github.com/${REPO}/releases`;
 
@@ -106,7 +151,7 @@ export default function UpdateCenter({
     <Modal
       title="更新中心"
       onClose={onClose}
-      width={640}
+      width={680}
       footer={
         <>
           <button className="chip-button" onClick={() => window.api.openUrl(downloadPage)}>
@@ -172,9 +217,7 @@ export default function UpdateCenter({
             </>
           )}
 
-          {state.status === 'ready' && (
-            <p className="update-line">安装完成，应用即将重启…</p>
-          )}
+          {state.status === 'ready' && <p className="update-line">安装完成，应用即将重启…</p>}
 
           {state.status === 'error' && (
             <>
@@ -192,9 +235,6 @@ export default function UpdateCenter({
         <div className="update-changelog">
           <div className="update-changelog-head">
             <span className="update-changelog-title">历史版本</span>
-            <button className="link-btn" onClick={loadReleases}>
-              刷新
-            </button>
           </div>
           <p className="help" style={{ marginBottom: 10 }}>
             回退到旧版本前请先备份数据，旧版本可能无法读取新版本创建的数据。
@@ -205,6 +245,7 @@ export default function UpdateCenter({
               正在加载版本列表… <span className="update-spinner" />
             </p>
           )}
+
           {error && (
             <p className="help" style={{ color: 'var(--danger)' }}>
               加载失败：{error}。可以点左下角「打开下载页」在浏览器里查看全部版本。
@@ -213,21 +254,40 @@ export default function UpdateCenter({
 
           {releases && releases.length > 0 && (
             <div className="release-list">
-              {releases.map((item) => (
-                <div className="release-row" key={item.tag}>
-                  <b>{item.tag}</b>
-                  <span className="release-date">
-                    {item.publishedAt ? `发布于 ${formatDate(item.publishedAt)}` : ''}
-                  </span>
-                  <button
-                    className="chip-button"
-                    onClick={() => window.api.openUrl(item.url)}
-                    title="在浏览器中打开该版本的发布页"
-                  >
-                    打开下载页
-                  </button>
-                </div>
-              ))}
+              {releases.map((item) => {
+                const open = expanded.has(item.tag);
+                return (
+                  <div className="release-card" key={item.tag}>
+                    <button
+                      className={`release-head ${open ? 'open' : ''}`}
+                      onClick={() => toggle(item.tag)}
+                    >
+                      <Icon name="tag" size={13} />
+                      <b>{item.tag}</b>
+                      <span className="release-date">
+                        {item.publishedAt ? `发布于 ${formatDate(item.publishedAt)}` : ''}
+                      </span>
+                      <span className={`release-chevron ${open ? 'open' : ''}`}>
+                        <Icon name="chevron" size={12} />
+                      </span>
+                    </button>
+                    {open && (
+                      <div className="release-body">
+                        {item.body && item.body.trim() ? (
+                          renderMarkdown(item.body)
+                        ) : (
+                          <p className="help">该版本没有提供更新说明。</p>
+                        )}
+                        <div className="release-foot">
+                          <button className="link-btn" onClick={() => window.api.openUrl(item.url)}>
+                            打开下载页 →
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
 

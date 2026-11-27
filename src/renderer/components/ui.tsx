@@ -20,6 +20,12 @@ const icons: Record<string, React.ReactNode> = {
     </>
   ),
   send: <path d="M4.5 12 20 4.5 13.5 20l-2.2-6.3L4.5 12Z" />,
+  tag: (
+    <>
+      <path d="M12.5 3H4v8.5l9 9a1.8 1.8 0 0 0 2.6 0l5.9-5.9a1.8 1.8 0 0 0 0-2.6l-9-9Z" />
+      <circle cx="8" cy="8" r="1.2" />
+    </>
+  ),
   cloudDownload: (
     <>
       <path d="M7.5 16.5A3.75 3.75 0 0 1 7 9.06 5.25 5.25 0 0 1 17.3 9.6a3.4 3.4 0 0 1 .2 6.9" />

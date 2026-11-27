@@ -9,3 +9,8 @@ release/
 .env
 .env.local
 dist-electron/
+
+# 发布流程生成的产物
+release-notes.md
+releases.json
+latest.json

@@ -584,6 +584,110 @@ fn stop_load_test() {
     load_test::stop_current();
 }
 
+/// 拉取历史版本列表。
+/// 依次尝试：release 附带的 releases.json（CDN，含更新说明）
+/// → releases.atom（无限流，只有版本号和日期）→ GitHub API（有限流）。
+/// 放在 Rust 侧是为了绕开 WebView 的跨域限制。
+#[tauri::command]
+fn fetch_releases() -> Result<Value, String> {
+    let agent = ureq::AgentBuilder::new()
+        .timeout(std::time::Duration::from_secs(8))
+        .build();
+
+    fn pick<'a>(text: &'a str, start: &str, end: &str) -> Option<&'a str> {
+        let from = text.find(start)? + start.len();
+        let rest = &text[from..];
+        let to = rest.find(end)?;
+        Some(&rest[..to])
+    }
+
+    // 1) releases.json：CI 生成，带更新说明
+    if let Ok(response) = agent
+        .get("https://github.com/Lixin-2/apiTools/releases/latest/download/releases.json")
+        .set("User-Agent", "apiTools")
+        .call()
+    {
+        if let Ok(text) = response.into_string() {
+            if let Ok(Value::Array(items)) = serde_json::from_str::<Value>(&text) {
+                if !items.is_empty() {
+                    return Ok(Value::Array(items));
+                }
+            }
+        }
+    }
+
+    // 2) Atom feed：没有调用额度限制，作为兜底
+    if let Ok(response) = agent
+        .get("https://github.com/Lixin-2/apiTools/releases.atom")
+        .set("User-Agent", "apiTools")
+        .call()
+    {
+        if let Ok(xml) = response.into_string() {
+            let mut list = Vec::new();
+            for entry in xml.split("<entry>").skip(1) {
+                // Atom 的 title 可能是「v1.0.2: ci: fix ...」这种发布标题，只取版本号部分
+                let raw_title = pick(entry, "<title>", "</title>").unwrap_or("").trim();
+                let tag = raw_title
+                    .split(':')
+                    .next()
+                    .unwrap_or(raw_title)
+                    .trim()
+                    .to_string();
+                if tag.is_empty() {
+                    continue;
+                }
+                // published 是发布时刻，updated 可能被后续编辑刷新
+                let updated = pick(entry, "<published>", "</published>")
+                    .or_else(|| pick(entry, "<updated>", "</updated>"))
+                    .unwrap_or("")
+                    .to_string();
+                let url = pick(entry, "<link rel=\"alternate\" type=\"text/html\" href=\"", "\"")
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| format!("https://github.com/Lixin-2/apiTools/releases/tag/{tag}"));
+                list.push(json!({
+                    "tag": tag,
+                    "publishedAt": updated,
+                    "url": url,
+                    "body": ""
+                }));
+            }
+            if !list.is_empty() {
+                return Ok(Value::Array(list));
+            }
+        }
+    }
+
+    // 3) GitHub API：最后的兜底（未认证每小时 60 次）
+    if let Ok(response) = agent
+        .get("https://api.github.com/repos/Lixin-2/apiTools/releases?per_page=20")
+        .set("User-Agent", "apiTools")
+        .set("Accept", "application/vnd.github+json")
+        .call()
+    {
+        if let Ok(text) = response.into_string() {
+            if let Ok(Value::Array(items)) = serde_json::from_str::<Value>(&text) {
+                let list: Vec<Value> = items
+                    .iter()
+                    .filter_map(|item| {
+                        let tag = item.get("tag_name")?.as_str()?.to_string();
+                        Some(json!({
+                            "tag": tag,
+                            "publishedAt": item.get("published_at").and_then(Value::as_str).unwrap_or(""),
+                            "url": item.get("html_url").and_then(Value::as_str).unwrap_or(""),
+                            "body": item.get("body").and_then(Value::as_str).unwrap_or("")
+                        }))
+                    })
+                    .collect();
+                if !list.is_empty() {
+                    return Ok(Value::Array(list));
+                }
+            }
+        }
+    }
+
+    Err("无法获取版本列表，请检查网络或稍后重试".to_string())
+}
+
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
     if !(url.starts_with("http://") || url.starts_with("https://")) {
@@ -954,6 +1058,7 @@ fn main() {
             stop_load_test,
             inspect_body_pool,
             inspect_vars_csv,
+            fetch_releases,
             open_url,
             pick_file,
             save_response_file,

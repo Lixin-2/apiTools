@@ -21,8 +21,9 @@ try {
 }
 
 if (!Array.isArray(raw)) {
-  console.error('[releases.json] 输入不是数组，可能被 API 限流');
-  process.exit(1);
+  // API 被限流或返回错误对象时不要让整个发布流程失败，退化为只含当前版本
+  console.warn('[releases.json] 输入不是数组（可能被限流），只写当前版本');
+  raw = [];
 }
 
 const seen = new Set();
@@ -34,6 +35,7 @@ if (version) {
     tag: `v${version}`,
     publishedAt: new Date().toISOString(),
     url: `https://github.com/${owner}/releases/tag/v${version}`,
+    body: '',
   });
   seen.add(`v${version}`);
 }
@@ -46,6 +48,7 @@ for (const item of raw) {
     tag,
     publishedAt: item.published_at ?? '',
     url: item.html_url,
+    body: typeof item.body === 'string' ? item.body : '',
   });
 }
 

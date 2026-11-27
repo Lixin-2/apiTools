@@ -91,6 +91,7 @@ export interface ApiToolsApi {
   }): Promise<string>;
   revealPath(path: string): Promise<void>;
   openUrl(url: string): Promise<void>;
+  fetchReleases(): Promise<{ tag: string; publishedAt: string; url: string }[]>;
   startLoadTest(config: LoadTestConfig): Promise<{ ok: boolean }>;
   stopLoadTest(): Promise<void>;
   onLoadTestProgress(handler: (snapshot: LoadTestSnapshot) => void): Promise<() => void>;

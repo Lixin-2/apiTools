@@ -106,6 +106,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -116,6 +118,9 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      - name: Generate release notes
+        run: node scripts/make-release-notes.mjs
+
       - name: Generate updater manifest
         run: node scripts/make-latest-json.mjs artifacts
 
@@ -123,7 +128,7 @@ jobs:
         shell: bash
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          curl -sS -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+          curl -sS -f -H "Authorization: Bearer ${GITHUB_TOKEN}" \
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases?per_page=30" \
             -o "$RUNNER_TEMP/releases-raw.json" || echo "[]" > "$RUNNER_TEMP/releases-raw.json"
           node scripts/make-releases-json.mjs "$RUNNER_TEMP/releases-raw.json" "$VERSION"
@@ -132,7 +137,7 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          body_path: release-notes.md
           files: |
             artifacts/**/*
             latest.json

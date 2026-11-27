@@ -1,7 +1,7 @@
 {
   "name": "apitools",
   "private": true,
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "本地优先的 API 调试台：接口调试、环境管理、压测与 MCP Agent 一体化",
   "type": "module",
   "scripts": {

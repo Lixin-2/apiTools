@@ -2908,3 +2908,109 @@ body.resizing-row * {
   background: var(--danger);
   box-shadow: 0 0 0 2px var(--background, var(--bg));
 }
+
+/* ------------------------------- update center ----------------------------- */
+
+.update-tabs {
+  display: flex;
+  gap: 22px;
+  border-bottom: 1px solid var(--border-soft);
+  margin-bottom: 16px;
+}
+.update-tabs button {
+  padding: 9px 0 10px;
+  margin-bottom: -1px;
+  font-size: 13px;
+  color: var(--text-dim);
+  border-bottom: 2px solid transparent;
+}
+.update-tabs button:hover {
+  color: var(--text);
+}
+.update-tabs button.active {
+  color: var(--text);
+  font-weight: 620;
+  border-bottom-color: var(--text);
+}
+
+.update-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 104px;
+}
+.update-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text);
+}
+.update-line.danger {
+  color: var(--danger);
+}
+.update-spinner {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  animation: update-spin 0.7s linear infinite;
+}
+@keyframes update-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.link-btn {
+  font-size: 12px;
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.link-btn:hover {
+  opacity: 0.8;
+}
+
+.update-changelog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.update-changelog-title {
+  font-size: 12.5px;
+  font-weight: 620;
+}
+.release-list {
+  margin-top: 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  overflow: hidden auto;
+  max-height: 330px;
+}
+.release-row {
+  display: grid;
+  grid-template-columns: minmax(88px, auto) 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.release-row:last-child {
+  border-bottom: none;
+}
+.release-row b {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.release-date {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+.release-row .chip-button {
+  height: 26px;
+  font-size: 11.5px;
+}

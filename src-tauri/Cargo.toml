@@ -1,6 +1,6 @@
 [package]
 name = "apitools"
-version = "1.0.10"
+version = "1.0.11"
 license = "Apache-2.0"
 authors = ["apiTools contributors"]
 description = "A local-first REST API debugger with import/export, load testing and MCP support"

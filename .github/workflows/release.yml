@@ -119,11 +119,23 @@ jobs:
       - name: Generate updater manifest
         run: node scripts/make-latest-json.mjs artifacts
 
+      - name: Collect release list for in-app changelog
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          curl -sS -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases?per_page=30" \
+            -o "$RUNNER_TEMP/releases-raw.json" || echo "[]" > "$RUNNER_TEMP/releases-raw.json"
+          node scripts/make-releases-json.mjs "$RUNNER_TEMP/releases-raw.json" "$VERSION"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           files: |
             artifacts/**/*
             latest.json
+            releases.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

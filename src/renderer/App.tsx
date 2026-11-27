@@ -27,6 +27,7 @@ import {
 } from './components/Dialogs';
 import { AppMark, Icon, METHOD_COLORS, Select } from './components/ui';
 import LoadTestDialog, { LoadTestLive } from './components/LoadTestDialog';
+import UpdateCenter, { UpdateState } from './components/UpdateCenter';
 import { useContextMenu } from './components/ContextMenu';
 
 type DialogKey = 'import' | 'mcp' | 'env' | null;
@@ -248,21 +249,17 @@ export default function App() {
   const [exportTarget, setExportTarget] = React.useState<Collection | null>(null);
   const [loadTestOpen, setLoadTestOpen] = React.useState(false);
   // 压测状态放在 App 层：面板关闭后压测继续，重新打开仍能看到曲线
-  const [updateState, setUpdateState] = React.useState<
-    | { status: 'idle' }
-    | { status: 'checking' }
-    | { status: 'available'; version: string; current: string; notes: string }
-    | { status: 'downloading'; version: string; percent: number }
-    | { status: 'ready'; version: string }
-    | { status: 'latest' }
-    | { status: 'error'; message: string }
-  >({ status: 'idle' });
+  // 更新中心：面板开关 + 检查状态，定时复查也放在这里
+  const [updateOpen, setUpdateOpen] = React.useState(false);
+  const [updateState, setUpdateState] = React.useState<UpdateState>({ status: 'checking' });
   const pendingUpdate = React.useRef<any>(null);
-  // 启动后台静默检查，有新版时在顶栏图标上点个红点（参考成熟桌面端的做法）
+  // 后台探测到的新版本号，用于顶栏红点
   const [updateReady, setUpdateReady] = React.useState<string | null>(null);
+  const currentVersion = info?.version ?? '';
 
   React.useEffect(() => {
-    const timer = setTimeout(async () => {
+    let cancelled = false;
+    const silentCheck = async () => {
       try {
         const update = await Promise.race([
           check(),
@@ -270,33 +267,24 @@ export default function App() {
             setTimeout(() => reject(new Error('timeout')), 15000),
           ),
         ]);
-        if (update) {
-          pendingUpdate.current = update;
-          setUpdateReady(update.version);
-        }
+        if (cancelled || !update) return;
+        pendingUpdate.current = update;
+        setUpdateReady(update.version);
       } catch {
         /* 后台检查失败不打扰用户 */
       }
-    }, 6000);
-    return () => clearTimeout(timer);
+    };
+    const first = setTimeout(silentCheck, 5000);
+    // 每 6 小时复查一次
+    const interval = setInterval(silentCheck, 6 * 60 * 60 * 1000);
+    return () => {
+      cancelled = true;
+      clearTimeout(first);
+      clearInterval(interval);
+    };
   }, []);
 
-  /** 点顶栏图标：已探测到新版就直接展示，否则现查一次 */
-  const openUpdatePanel = () => {
-    const pending = pendingUpdate.current;
-    if (pending && updateReady) {
-      setUpdateState({
-        status: 'available',
-        version: pending.version,
-        current: pending.currentVersion,
-        notes: pending.body ?? '',
-      });
-      return;
-    }
-    void checkForUpdate();
-  };
-
-  const checkForUpdate = async () => {
+  const runUpdateCheck = async () => {
     setUpdateState({ status: 'checking' });
     try {
       // 更新清单在 GitHub 上，国内网络可能较慢，加超时避免一直转圈
@@ -307,11 +295,12 @@ export default function App() {
         ),
       ]);
       if (!update) {
-        setUpdateState({ status: 'idle' });
-        showToast('当前已是最新版本');
+        setUpdateReady(null);
+        setUpdateState({ status: 'latest', current: currentVersion });
         return;
       }
       pendingUpdate.current = update;
+      setUpdateReady(update.version);
       setUpdateState({
         status: 'available',
         version: update.version,
@@ -329,6 +318,22 @@ export default function App() {
             : raw,
       });
     }
+  };
+
+  /** 打开更新中心：后台已探测到新版就直接展示，否则现查一次 */
+  const openUpdateCenter = () => {
+    setUpdateOpen(true);
+    const pending = pendingUpdate.current;
+    if (pending && updateReady) {
+      setUpdateState({
+        status: 'available',
+        version: pending.version,
+        current: pending.currentVersion,
+        notes: pending.body ?? '',
+      });
+      return;
+    }
+    void runUpdateCheck();
   };
 
   const installUpdate = async () => {
@@ -1117,10 +1122,10 @@ export default function App() {
           <span className="top-divider" />
           <button
             className="top-icon-btn"
-            title={updateReady ? `发现新版本 ${updateReady}` : '检查更新'}
-            onClick={openUpdatePanel}
+            title={updateReady ? `发现新版本 ${updateReady}` : '更新中心'}
+            onClick={openUpdateCenter}
           >
-            <Icon name="download" size={14} />
+            <Icon name="cloudDownload" size={15} />
             {updateReady && <span className="top-dot" />}
           </button>
           <button
@@ -1377,62 +1382,14 @@ export default function App() {
         </button>
       )}
 
-      {updateState.status !== 'idle' && updateState.status !== 'latest' && (
-        <Modal
-          title="软件更新"
-          subtitle={
-            updateState.status === 'checking'
-              ? '正在检查最新版本…'
-              : updateState.status === 'available'
-                ? `当前 ${updateState.current} · 最新 ${updateState.version}`
-                : updateState.status === 'downloading'
-                  ? `正在下载 ${updateState.version}`
-                  : updateState.status === 'ready'
-                    ? '下载完成，即将重启'
-                    : '检查更新失败'
-          }
-          onClose={() => setUpdateState({ status: 'idle' })}
-          footer={
-            <>
-              <span className="spacer" />
-              <button className="chip-button" onClick={() => setUpdateState({ status: 'idle' })}>
-                关闭
-              </button>
-              {(updateState.status === 'available' || updateState.status === 'error') &&
-                updateState.status === 'available' && (
-                  <button className="chip-button primary" onClick={installUpdate}>
-                    立即更新
-                  </button>
-                )}
-            </>
-          }
-        >
-          {updateState.status === 'checking' && (
-            <div className="lt-empty">正在连接更新服务器…</div>
-          )}
-          {updateState.status === 'available' && (
-            <div>
-              <p className="help">新版本 {updateState.version} 已发布</p>
-              {updateState.notes && <pre className="update-notes">{updateState.notes}</pre>}
-            </div>
-          )}
-          {updateState.status === 'downloading' && (
-            <div>
-              <div className="update-bar">
-                <span style={{ width: `${updateState.percent}%` }} />
-              </div>
-              <p className="help">{updateState.percent}% · 下载完成后会自动重启</p>
-            </div>
-          )}
-          {updateState.status === 'ready' && (
-            <p className="help">安装完成，应用即将重启…</p>
-          )}
-          {updateState.status === 'error' && (
-            <div className="result-box" style={{ color: 'var(--danger)' }}>
-              {updateState.message}
-            </div>
-          )}
-        </Modal>
+      {updateOpen && (
+        <UpdateCenter
+          currentVersion={currentVersion}
+          state={updateState}
+          onCheck={runUpdateCheck}
+          onInstall={installUpdate}
+          onClose={() => setUpdateOpen(false)}
+        />
       )}
 
       {promptState && (

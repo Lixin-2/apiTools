@@ -33,7 +33,8 @@ for (const file of files) {
       signature: fs.readFileSync(file, 'utf8').trim(),
       url: url(file.replace(/\.sig$/, '')),
     };
-  } else if (name.endsWith('.nsis.zip.sig')) {
+  } else if (name.endsWith('.exe.sig') || name.endsWith('.nsis.zip.sig')) {
+    // Windows 的更新包就是安装器本身（或 nsis.zip），签名文件跟着它走
     platforms['windows-x86_64'] = {
       signature: fs.readFileSync(file, 'utf8').trim(),
       url: url(file.replace(/\.sig$/, '')),

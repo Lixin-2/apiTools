@@ -298,7 +298,7 @@ export default function UpdateCenter({
                         {item.body && item.body.trim() ? (
                           renderMarkdown(item.body)
                         ) : (
-                          <p className="help">该版本没有提供更新说明。</p>
+                          <p className="help">这个版本没有内置更新说明，可以点下方链接到 GitHub 查看。</p>
                         )}
                         <button
                           className="release-link"

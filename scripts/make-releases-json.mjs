@@ -29,13 +29,21 @@ if (!Array.isArray(raw)) {
 const seen = new Set();
 const list = [];
 
-// 当前正在发布的版本还不在 API 结果里，手动补到最前面
+// 当前正在发布的版本在 API 结果里还不存在，手动补到最前面。
+// body 直接复用刚生成的更新说明，否则应用内展开会显示为空。
+let currentBody = '';
+try {
+  currentBody = fs.readFileSync('release-notes.md', 'utf8').trim();
+} catch {
+  currentBody = '';
+}
+
 if (version) {
   list.push({
     tag: `v${version}`,
     publishedAt: new Date().toISOString(),
     url: `https://github.com/${owner}/releases/tag/v${version}`,
-    body: '',
+    body: currentBody,
   });
   seen.add(`v${version}`);
 }

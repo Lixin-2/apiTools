@@ -1,8 +1,19 @@
 import React from 'react';
-import { FormField, LoadTestSnapshot } from '../../shared/types';
+import {
+  Environment,
+  FormField,
+  LoadTestConfig,
+  LoadTestSnapshot,
+} from '../../shared/types';
 import { Modal } from './Dialogs';
 import { BarChart, CHART_COLORS, DonutChart, LineChart } from './Charts';
-import { formatBytes, Icon } from './ui';
+import { formatBytes, Icon, Select } from './ui';
+
+export interface LoadTestLive {
+  running: boolean;
+  snapshot: LoadTestSnapshot | null;
+  series: { qps: number[]; avg: number[]; p95: number[] };
+}
 
 interface Props {
   requestName: string;
@@ -13,6 +24,12 @@ interface Props {
     body?: string;
     formFields?: FormField[];
   };
+  live: LoadTestLive;
+  environments: Environment[];
+  activeEnvironmentId: string | null;
+  onSelectEnvironment: (id: string | null) => void;
+  onStart: (config: LoadTestConfig) => Promise<void>;
+  onStop: () => Promise<void>;
   onClose: () => void;
 }
 
@@ -38,7 +55,21 @@ function Metric({
   );
 }
 
-export default function LoadTestDialog({ requestName, payload, onClose }: Props) {
+export default function LoadTestDialog({
+  requestName,
+  payload,
+  live,
+  environments,
+  activeEnvironmentId,
+  onSelectEnvironment,
+  onStart,
+  onStop,
+  onClose,
+}: Props) {
+  const { running, snapshot, series } = live;
+  const [tab, setTab] = React.useState<'config' | 'stats'>(() =>
+    live.running || live.snapshot ? 'stats' : 'config',
+  );
   const [concurrency, setConcurrency] = React.useState('10');
   const [mode, setMode] = React.useState<'duration' | 'count'>('duration');
   const [duration, setDuration] = React.useState('30');
@@ -49,13 +80,6 @@ export default function LoadTestDialog({ requestName, payload, onClose }: Props)
   const [maxRps, setMaxRps] = React.useState('80');
   const [changeSecs, setChangeSecs] = React.useState('5');
   const [rampUp, setRampUp] = React.useState('0');
-  const [running, setRunning] = React.useState(false);
-  const [snapshot, setSnapshot] = React.useState<LoadTestSnapshot | null>(null);
-  const [series, setSeries] = React.useState<{ qps: number[]; avg: number[]; p95: number[] }>({
-    qps: [],
-    avg: [],
-    p95: [],
-  });
   const [error, setError] = React.useState('');
   const [poolPath, setPoolPath] = React.useState('');
   const [poolName, setPoolName] = React.useState('');
@@ -65,45 +89,6 @@ export default function LoadTestDialog({ requestName, payload, onClose }: Props)
   const [csvName, setCsvName] = React.useState('');
   const [csvInfo, setCsvInfo] = React.useState<{ columns: string[]; rows: number } | null>(null);
   const [csvError, setCsvError] = React.useState('');
-
-  React.useEffect(() => {
-    let disposeProgress: (() => void) | null = null;
-    let disposeFinished: (() => void) | null = null;
-
-    window.api
-      .onLoadTestProgress((next) => {
-        setSnapshot(next);
-        setSeries((prev) => {
-          const append = (list: number[], value: number) => {
-            const next = [...list, value];
-            return next.length > 900 ? next.slice(next.length - 900) : next;
-          };
-          return {
-            qps: append(prev.qps, Number(next.qps.toFixed(2))),
-            avg: append(prev.avg, Math.round(next.avgMs)),
-            p95: append(prev.p95, next.p95),
-          };
-        });
-        if (!next.running) setRunning(false);
-      })
-      .then((dispose) => {
-        disposeProgress = dispose;
-      });
-
-    window.api
-      .onLoadTestFinished((next) => {
-        setSnapshot(next);
-        setRunning(false);
-      })
-      .then((dispose) => {
-        disposeFinished = dispose;
-      });
-
-    return () => {
-      disposeProgress?.();
-      disposeFinished?.();
-    };
-  }, []);
 
   const pickPool = async () => {
     setPoolError('');
@@ -174,10 +159,8 @@ export default function LoadTestDialog({ requestName, payload, onClose }: Props)
       setError('随机区间需要：最小 TPS ≥ 1，且最大 ≥ 最小');
       return;
     }
-    setSeries({ qps: [], avg: [], p95: [] });
-    setSnapshot(null);
     try {
-      await window.api.startLoadTest({
+      await onStart({
         method: payload.method,
         url: payload.url,
         headers: payload.headers,
@@ -195,15 +178,14 @@ export default function LoadTestDialog({ requestName, payload, onClose }: Props)
         bodyPoolZip: poolPath || undefined,
         variablesCsv: csvPath || undefined,
       });
-      setRunning(true);
+      setTab('stats');
     } catch (err: any) {
       setError(err?.message ?? String(err));
     }
   };
 
   const stop = async () => {
-    await window.api.stopLoadTest();
-    setRunning(false);
+    await onStop();
   };
 
   const exportCsv = async () => {
@@ -234,10 +216,8 @@ export default function LoadTestDialog({ requestName, payload, onClose }: Props)
     });
   };
 
-  const close = async () => {
-    if (running) await window.api.stopLoadTest();
-    onClose();
-  };
+  // 关闭面板不停止压测：引擎在后台继续，右下角会显示运行状态
+  const close = () => onClose();
 
   const statusItems = React.useMemo(() => {
     if (!snapshot) return [];
@@ -291,12 +271,39 @@ export default function LoadTestDialog({ requestName, payload, onClose }: Props)
       }
     >
       <div className="lt-shell">
+        <div className="lt-tabs">
+          <button
+            className={tab === 'config' ? 'active' : ''}
+            onClick={() => setTab('config')}
+          >
+            参数配置
+          </button>
+          <button
+            className={tab === 'stats' ? 'active' : ''}
+            onClick={() => setTab('stats')}
+          >
+            统计图表
+            {running && <span className="lt-tab-dot" />}
+          </button>
+        </div>
+
+        {tab === 'config' ? (
+          <>
         <div className="lt-section">
         <div className="lt-section-head">
           <span className="lt-section-title">压测参数</span>
-          <span className="lt-target" title={`${payload.method} ${payload.url}`}>
-            {payload.method} {payload.url}
-          </span>
+          <Select
+            value={activeEnvironmentId ?? ''}
+            onChange={(value) => onSelectEnvironment(value || null)}
+            options={[
+              { value: '', label: '不使用环境' },
+              ...environments.map((env) => ({ value: env.id, label: env.name })),
+            ]}
+            size="sm"
+            className="env-switch"
+            style={{ width: 176 }}
+            menuWidth={200}
+          />
         </div>
         <div className="lt-config">
         <label className="lt-field">
@@ -512,8 +519,8 @@ export default function LoadTestDialog({ requestName, payload, onClose }: Props)
           {error}
         </div>
       )}
-
-      {!snapshot ? (
+          </>
+        ) : !snapshot ? (
         <div className="lt-empty">
           <Icon name="robot" size={22} />
           <div>配置并发与时长后点「开始压测」，结果会实时显示在这里</div>

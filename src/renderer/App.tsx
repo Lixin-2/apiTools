@@ -6,6 +6,7 @@ import {
   ExportFormat,
   ImportFormat,
   KeyValue,
+  LoadTestConfig,
   SendResponse,
   Workspace,
   createRequest,
@@ -23,7 +24,7 @@ import {
   Modal,
 } from './components/Dialogs';
 import { AppMark, Icon, METHOD_COLORS, Select } from './components/ui';
-import LoadTestDialog from './components/LoadTestDialog';
+import LoadTestDialog, { LoadTestLive } from './components/LoadTestDialog';
 import { useContextMenu } from './components/ContextMenu';
 
 type DialogKey = 'import' | 'mcp' | 'env' | null;
@@ -244,6 +245,65 @@ export default function App() {
   const [dialog, setDialog] = React.useState<DialogKey>(null);
   const [exportTarget, setExportTarget] = React.useState<Collection | null>(null);
   const [loadTestOpen, setLoadTestOpen] = React.useState(false);
+  // 压测状态放在 App 层：面板关闭后压测继续，重新打开仍能看到曲线
+  const [liveTest, setLiveTest] = React.useState<LoadTestLive>({
+    running: false,
+    snapshot: null,
+    series: { qps: [], avg: [], p95: [] },
+  });
+
+  React.useEffect(() => {
+    let disposeProgress: (() => void) | null = null;
+    let disposeFinished: (() => void) | null = null;
+    const append = (list: number[], value: number) => {
+      const next = [...list, value];
+      return next.length > 900 ? next.slice(next.length - 900) : next;
+    };
+
+    window.api
+      .onLoadTestProgress((next) => {
+        setLiveTest((prev) => ({
+          running: next.running,
+          snapshot: next,
+          series: {
+            qps: append(prev.series.qps, Number(next.qps.toFixed(2))),
+            avg: append(prev.series.avg, Math.round(next.avgMs)),
+            p95: append(prev.series.p95, next.p95),
+          },
+        }));
+      })
+      .then((dispose) => {
+        disposeProgress = dispose;
+      });
+
+    window.api
+      .onLoadTestFinished((next) => {
+        setLiveTest((prev) => ({ ...prev, running: false, snapshot: next }));
+      })
+      .then((dispose) => {
+        disposeFinished = dispose;
+      });
+
+    return () => {
+      disposeProgress?.();
+      disposeFinished?.();
+    };
+  }, []);
+
+  const runLoadTest = async (config: LoadTestConfig) => {
+    setLiveTest({ running: true, snapshot: null, series: { qps: [], avg: [], p95: [] } });
+    try {
+      await window.api.startLoadTest(config);
+    } catch (err) {
+      setLiveTest({ running: false, snapshot: null, series: { qps: [], avg: [], p95: [] } });
+      throw err;
+    }
+  };
+
+  const haltLoadTest = async () => {
+    await window.api.stopLoadTest();
+    setLiveTest((prev) => ({ ...prev, running: false }));
+  };
 
   const [toast, setToast] = React.useState('');
   const [promptState, setPromptState] = React.useState<{
@@ -1156,8 +1216,34 @@ export default function App() {
         <LoadTestDialog
           requestName={draft.name || '未命名请求'}
           payload={buildRequestPayload(draft)}
+          live={liveTest}
+          environments={workspace?.environments ?? []}
+          activeEnvironmentId={workspace?.activeEnvironmentId ?? null}
+          onSelectEnvironment={async (id) => {
+            await window.api.setActiveEnvironment(id);
+            await reload();
+          }}
+          onStart={runLoadTest}
+          onStop={haltLoadTest}
           onClose={() => setLoadTestOpen(false)}
         />
+      )}
+
+      {liveTest.running && !loadTestOpen && (
+        <button
+          className="lt-float"
+          onClick={() => setLoadTestOpen(true)}
+          title="压测在后台运行，点击打开面板"
+        >
+          <span className="lt-float-dot" />
+          <span>压测进行中</span>
+          <b>{(liveTest.snapshot?.total ?? 0).toLocaleString()}</b>
+          <span className="lt-float-meta">
+            {(liveTest.snapshot?.qps ?? 0) >= 1
+              ? `请求 · QPS ${Math.round(liveTest.snapshot?.qps ?? 0)}`
+              : '请求'}
+          </span>
+        </button>
       )}
 
       {promptState && (

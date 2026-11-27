@@ -742,8 +742,15 @@ export default function App() {
     url = applyParams(url, params);
 
     const headers: Record<string, string> = {};
+    // 环境统一请求头：请求里写了同名 Header（忽略大小写）时以请求为准
+    const requestHeaderKeys = new Set(
+      request.headers
+        .filter((header) => header.enabled && header.key)
+        .map((header) => substituteVars(header.key, vars).trim().toLowerCase()),
+    );
     for (const header of activeEnv?.headers ?? []) {
       if (!header.enabled || !header.key) continue;
+      if (requestHeaderKeys.has(header.key.trim().toLowerCase())) continue;
       headers[header.key] = header.value;
     }
     for (const header of request.headers) {

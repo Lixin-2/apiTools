@@ -372,11 +372,16 @@ export default function RequestEditor({
           menuWidth={132}
         />
         <div className="url-input-wrap">
+          {baseUrl && !isAbsolute && (
+            <span className="url-prefix" title={`环境 URL 前缀：${baseUrl}`}>
+              {baseUrl}
+            </span>
+          )}
           <VarInput
             value={draft.url}
             onChange={onUrlChange}
             variables={variables}
-            placeholder="https://api.example.com/users 或相对路径 /users"
+            placeholder={baseUrl ? '/接口路径，例如 /users' : 'https://api.example.com/users'}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) onSend();
             }}
@@ -422,21 +427,14 @@ export default function RequestEditor({
         </button>
       </div>
 
-      {hasVars ? (
+      {hasVars && (
         <div className="url-hint warn">
           <Icon name="info" size={12} />
           <span>
             检测到 {'{{变量}}'}：变量已改为「环境」里的 URL 前缀与统一请求头，可直接写相对路径，例如 /users
           </span>
         </div>
-      ) : willPrefix ? (
-        <div className="url-hint">
-          <Icon name="globe" size={12} />
-          <span>
-            发送到 <code>{previewUrl}</code>
-          </span>
-        </div>
-      ) : null}
+      )}
 
       <div className="request-meta">
         <input

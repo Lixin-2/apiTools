@@ -285,9 +285,10 @@ export default function App() {
       const raw = String(err?.message ?? err);
       setUpdateState({
         status: 'error',
-        message:
-          raw.includes('404') || /failed|error send|dns|network/i.test(raw)
-            ? '获取不到更新信息：可能是还没有发布带更新清单的版本，或网络无法访问 GitHub。稍后再试即可。'
+        message: /valid release JSON|404|not found/i.test(raw)
+          ? '还没有可用的更新包：最新版本未附带更新清单（latest.json），或当前版本早于首个支持自动更新的版本。'
+          : /timed out|dns|network|failed to fetch|error send/i.test(raw)
+            ? '无法连接更新服务器，请检查网络后重试。'
             : raw,
       });
     }

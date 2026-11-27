@@ -55,6 +55,14 @@ jobs:
       - name: Install dependencies
         run: npm ci --registry=https://registry.npmjs.org
 
+      - name: Verify signing key
+        shell: bash
+        run: |
+          if [ -z "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" ]; then
+            echo "::error::缺少 TAURI_SIGNING_PRIVATE_KEY，更新包无法签名。请在 Settings → Secrets and variables → Actions 中添加私钥内容（cat ~/.tauri/apitools.key）。"
+            exit 1
+          fi
+
       - name: Build app and installer
         run: ${{ matrix.build }}
         env:

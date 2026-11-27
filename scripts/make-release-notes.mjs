@@ -34,6 +34,7 @@ try {
 }
 
 const feat = [];
+const improve = [];
 const fix = [];
 const other = [];
 
@@ -42,7 +43,9 @@ for (const subject of subjects) {
     feat.push(subject.replace(/^feat(\([^)]*\))?!?:\s*/i, ''));
   } else if (/^fix(\([^)]*\))?!?:/i.test(subject)) {
     fix.push(subject.replace(/^fix(\([^)]*\))?!?:\s*/i, ''));
-  } else if (/^(chore|ci|docs|style|test|build)(\([^)]*\))?!?:/i.test(subject)) {
+  } else if (/^(perf|refactor|style|improve)(\([^)]*\))?!?:/i.test(subject)) {
+    improve.push(subject.replace(/^(perf|refactor|style|improve)(\([^)]*\))?!?:\s*/i, ''));
+  } else if (/^(chore|ci|docs|test|build)(\([^)]*\))?!?:/i.test(subject)) {
     // 工程杂项不进更新说明
   } else {
     other.push(subject);
@@ -52,6 +55,9 @@ for (const subject of subjects) {
 const lines = [];
 if (feat.length) {
   lines.push('### 新功能', ...feat.map((item) => `- ${item}`), '');
+}
+if (improve.length) {
+  lines.push('### 改进', ...improve.map((item) => `- ${item}`), '');
 }
 if (fix.length) {
   lines.push('### 问题修复', ...fix.map((item) => `- ${item}`), '');
@@ -64,5 +70,5 @@ const body = lines.join('\n').trim();
 fs.writeFileSync('release-notes.md', (body || `apiTools ${version}`) + '\n');
 console.log(
   `[release-notes] ${previousTag || '(首个版本)'} → ${currentTag}：` +
-    `新功能 ${feat.length} / 修复 ${fix.length} / 其他 ${other.length}`,
+    `新功能 ${feat.length} / 改进 ${improve.length} / 修复 ${fix.length}`,
 );

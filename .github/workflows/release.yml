@@ -6,14 +6,16 @@ permissions:
 on:
   workflow_dispatch:
   push:
-    tags:
-      - 'v*'
     branches:
       - main
     paths:
-      # 只有版本号或发布流程本身变化时才构建，日常提交不打扰
+      # 只有版本号变化才构建发布，日常提交和打 tag 都不会触发
       - 'src-tauri/tauri.conf.json'
-      - '.github/workflows/release.yml'
+
+# 同一时间只允许一个发布流程，避免两次版本变更并发写同一个 release
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   build:

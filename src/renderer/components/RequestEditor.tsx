@@ -407,8 +407,12 @@ export default function RequestEditor({
           />
         </div>
         {onLoadTest && (
-          <button className="chip-button" onClick={onLoadTest} title="用当前请求做压力测试">
-            <Icon name="gauge" size={12} />
+          <button
+            className="chip-button loadtest-btn"
+            onClick={onLoadTest}
+            title="用当前请求做压力测试"
+          >
+            <Icon name="gauge" size={13} />
             压测
           </button>
         )}

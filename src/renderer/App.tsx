@@ -1130,16 +1130,6 @@ export default function App() {
           </button>
           <button
             className="top-icon-btn"
-            title="刷新数据"
-            onClick={async () => {
-              await reload();
-              showToast('已刷新');
-            }}
-          >
-            <Icon name="refresh" size={14} />
-          </button>
-          <button
-            className="top-icon-btn"
             title="打开 GitHub 仓库"
             onClick={() => window.api.openUrl('https://github.com/Lixin-2/apiTools')}
           >

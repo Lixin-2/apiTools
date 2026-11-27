@@ -253,9 +253,6 @@ export default function UpdateCenter({
                 <Icon name="externalLink" size={13} />
                 在官网查看
               </button>
-              <button className="chip-button ghost" title="刷新" onClick={loadReleases}>
-                <Icon name="refresh" size={13} />
-              </button>
             </div>
           </div>
           <p className="help" style={{ marginBottom: 10 }}>

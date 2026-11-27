@@ -20,6 +20,13 @@ const icons: Record<string, React.ReactNode> = {
     </>
   ),
   send: <path d="M4.5 12 20 4.5 13.5 20l-2.2-6.3L4.5 12Z" />,
+  externalLink: (
+    <>
+      <path d="M14 4h6v6" />
+      <path d="M20 4 11 13" />
+      <path d="M18 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5" />
+    </>
+  ),
   tag: (
     <>
       <path d="M12.5 3H4v8.5l9 9a1.8 1.8 0 0 0 2.6 0l5.9-5.9a1.8 1.8 0 0 0 0-2.6l-9-9Z" />

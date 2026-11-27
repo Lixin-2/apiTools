@@ -233,8 +233,30 @@ export default function UpdateCenter({
         </div>
       ) : (
         <div className="update-changelog">
-          <div className="update-changelog-head">
-            <span className="update-changelog-title">历史版本</span>
+          <div className="changelog-head">
+            <div>
+              <div className="changelog-title">更新日志</div>
+              <div className="changelog-sub">查看各版本的更新内容。</div>
+            </div>
+            <div className="changelog-actions">
+              <button
+                className="chip-button"
+                onClick={() => {
+                  setTab('app');
+                  onCheck();
+                }}
+              >
+                <Icon name="cloudDownload" size={13} />
+                检查更新
+              </button>
+              <button className="chip-button" onClick={() => window.api.openUrl(downloadPage)}>
+                <Icon name="externalLink" size={13} />
+                在官网查看
+              </button>
+              <button className="chip-button ghost" title="刷新" onClick={loadReleases}>
+                <Icon name="refresh" size={13} />
+              </button>
+            </div>
           </div>
           <p className="help" style={{ marginBottom: 10 }}>
             回退到旧版本前请先备份数据，旧版本可能无法读取新版本创建的数据。
@@ -254,7 +276,7 @@ export default function UpdateCenter({
 
           {releases && releases.length > 0 && (
             <div className="release-list">
-              {releases.map((item) => {
+              {releases.map((item, index) => {
                 const open = expanded.has(item.tag);
                 return (
                   <div className="release-card" key={item.tag}>
@@ -262,13 +284,16 @@ export default function UpdateCenter({
                       className={`release-head ${open ? 'open' : ''}`}
                       onClick={() => toggle(item.tag)}
                     >
-                      <Icon name="tag" size={13} />
-                      <b>{item.tag}</b>
+                      <span className="release-tag">
+                        <Icon name="tag" size={12} />
+                        <b>{item.tag}</b>
+                        {index === 0 && <span className="release-new">NEW</span>}
+                      </span>
                       <span className="release-date">
                         {item.publishedAt ? `发布于 ${formatDate(item.publishedAt)}` : ''}
                       </span>
                       <span className={`release-chevron ${open ? 'open' : ''}`}>
-                        <Icon name="chevron" size={12} />
+                        <Icon name="chevron" size={13} />
                       </span>
                     </button>
                     {open && (
@@ -278,11 +303,13 @@ export default function UpdateCenter({
                         ) : (
                           <p className="help">该版本没有提供更新说明。</p>
                         )}
-                        <div className="release-foot">
-                          <button className="link-btn" onClick={() => window.api.openUrl(item.url)}>
-                            打开下载页 →
-                          </button>
-                        </div>
+                        <button
+                          className="release-link"
+                          onClick={() => window.api.openUrl(item.url)}
+                        >
+                          <Icon name="externalLink" size={12} />
+                          GitHub Release
+                        </button>
                       </div>
                     )}
                   </div>
